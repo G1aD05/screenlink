@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ScreenLink</title>
+<script src="/socket.io/socket.io.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&display=swap');
+
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+:root {
+  --bg:#0a0a0f;
+  --surface:#111118;
+  --surface2:#1a1a24;
+  --border:rgba(120,120,200,0.15);
+  --border-bright:rgba(120,120,200,0.35);
+  --accent:#6c63ff;
+  --accent2:#3ecfcf;
+  --text:#e8e8f0;
+  --muted:#888899;
+  --danger:#ff4f6a;
+  --mono:'Space Mono',monospace;
+  --sans:'DM Sans',sans-serif;
+}
+
+body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:100vh;display:flex;flex-direction:column}
+
+header{display:flex;align-items:center;justify-content:space-between;padding:1.1rem 2rem;border-bottom:1px solid var(--border);background:var(--surface)}
+.logo{font-family:var(--mono);font-size:1.1rem;font-weight:700;letter-spacing:-0.02em;display:flex;align-items:center;gap:.5rem}
+.logo-dot{width:8px;height:8px;border-radius:50%;background:var(--accent2);display:inline-block;animation:pulse 2s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.8)}}
+
+.mode-toggle{display:flex;background:var(--bg);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.mode-btn{padding:.45rem 1.2rem;font-family:var(--sans);font-size:.82rem;font-weight:500;background:none;border:none;color:var(--muted);cursor:pointer;transition:all .2s;letter-spacing:.03em}
+.mode-btn.active{background:var(--accent);color:#fff}
+
+main{flex:1;display:flex;flex-direction:column;padding:2rem;max-width:900px;width:100%;margin:0 auto;gap:1.5rem}
+
+#host-panel,#viewer-panel{display:none;flex-direction:column;gap:1.5rem}
+#host-panel.active,#viewer-panel.active{display:flex}
+
+.card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:1.75rem}
+.card-title{font-size:.72rem;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:1.2rem}
+
+.code-display{display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap}
+.code-digits{font-family:var(--mono);font-size:3.2rem;font-weight:700;letter-spacing:.25em;color:var(--accent2);text-shadow:0 0 30px rgba(62,207,207,.3);flex:1;min-width:240px;user-select:all}
+.code-meta{display:flex;flex-direction:column;align-items:flex-end;gap:.4rem}
+.timer-bar-wrap{width:120px;height:4px;background:var(--border);border-radius:2px;overflow:hidden}
+.timer-bar{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:2px;transition:width 1s linear}
+.timer-label{font-size:.75rem;color:var(--muted);font-family:var(--mono)}
+
+.screen-wrap{position:relative;background:#000;border-radius:10px;overflow:hidden;aspect-ratio:16/9;border:1px solid var(--border)}
+.screen-wrap video,.screen-wrap img{width:100%;height:100%;object-fit:contain;display:block}
+.screen-placeholder{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.75rem;color:var(--muted)}
+.screen-placeholder svg{opacity:.3}
+.screen-placeholder p{font-size:.9rem}
+
+.btn{display:inline-flex;align-items:center;gap:.5rem;padding:.65rem 1.4rem;font-family:var(--sans);font-size:.88rem;font-weight:500;border-radius:8px;border:1px solid var(--border-bright);background:var(--surface2);color:var(--text);cursor:pointer;transition:all .18s;white-space:nowrap}
+.btn:hover{background:var(--surface);border-color:var(--accent);color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.primary:hover{background:#5a52e0;border-color:#5a52e0;color:#fff}
+.btn.danger{background:transparent;border-color:var(--danger);color:var(--danger)}
+.btn.danger:hover{background:rgba(255,79,106,.1)}
+.btn.sm{padding:.35rem .8rem;font-size:.78rem}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+
+.status{display:inline-flex;align-items:center;gap:.4rem;font-size:.78rem;font-weight:500;padding:.3rem .75rem;border-radius:20px;border:1px solid}
+.status.idle{border-color:var(--border);color:var(--muted)}
+.status.live{border-color:rgba(62,207,207,.4);color:var(--accent2);background:rgba(62,207,207,.08)}
+.status.waiting{border-color:rgba(108,99,255,.4);color:var(--accent);background:rgba(108,99,255,.08)}
+.status-dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+.status.live .status-dot{animation:pulse 1s ease-in-out infinite}
+
+.code-input-wrap{display:flex;gap:.75rem;align-items:center;flex-wrap:wrap}
+.code-input{font-family:var(--mono);font-size:1.8rem;font-weight:700;letter-spacing:.2em;background:var(--bg);border:2px solid var(--border-bright);border-radius:10px;color:var(--accent2);padding:.6rem 1rem;width:220px;outline:none;text-align:center;transition:border-color .2s}
+.code-input:focus{border-color:var(--accent2);box-shadow:0 0 0 3px rgba(62,207,207,.1)}
+.code-input.error{border-color:var(--danger);animation:shake .3s}
+@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
+
+.url-bar-wrap{display:flex;gap:.6rem;align-items:center}
+.url-input{flex:1;font-family:var(--sans);font-size:.9rem;background:var(--bg);border:1px solid var(--border-bright);border-radius:8px;color:var(--text);padding:.6rem 1rem;outline:none;transition:border-color .2s}
+.url-input:focus{border-color:var(--accent)}
+.url-input::placeholder{color:var(--muted)}
+
+.cmd-log{background:var(--bg);border-radius:8px;padding:.75rem 1rem;font-family:var(--mono);font-size:.78rem;color:var(--muted);max-height:120px;overflow-y:auto;display:flex;flex-direction:column;gap:.3rem}
+.cmd-log-entry{display:flex;gap:.75rem;align-items:baseline}
+.cmd-log-time{color:var(--accent);flex-shrink:0}
+.cmd-log-text{color:var(--text);word-break:break-all}
+
+.info-box{background:rgba(108,99,255,.07);border:1px solid rgba(108,99,255,.2);border-radius:10px;padding:1rem 1.25rem;font-size:.83rem;color:var(--muted);line-height:1.6}
+.info-box strong{color:var(--accent2);font-weight:500}
+
+.row{display:flex;gap:.75rem;align-items:center;flex-wrap:wrap}
+.spacer{flex:1}
+
+#toast{position:fixed;bottom:2rem;right:2rem;background:var(--surface2);border:1px solid var(--border-bright);border-radius:10px;padding:.75rem 1.25rem;font-size:.85rem;color:var(--text);opacity:0;transform:translateY(10px);transition:all .25s;z-index:999;pointer-events:none;max-width:300px}
+#toast.show{opacity:1;transform:translateY(0)}
+
+.viewer-count{font-size:.8rem;color:var(--accent2);font-family:var(--mono)}
+
+.quick-sites{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.75rem}
+.quick-btn{padding:.35rem .85rem;font-size:.78rem;border-radius:20px;border:1px solid var(--border);background:var(--surface2);color:var(--muted);cursor:pointer;transition:all .15s;font-family:var(--sans)}
+.quick-btn:hover{border-color:var(--accent2);color:var(--accent2)}
+
+.connection-info{font-size:.75rem;color:var(--muted);font-family:var(--mono);margin-top:.5rem}
+
+/* ── Tab list ── */
+.tab-list{display:flex;flex-direction:column;gap:.5rem;margin-top:.25rem}
+.tab-item{display:flex;align-items:center;gap:.6rem;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:.5rem .75rem;font-size:.82rem}
+.tab-favicon{width:14px;height:14px;flex-shrink:0;opacity:.7}
+.tab-url{flex:1;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--mono);font-size:.75rem}
+.tab-close{background:none;border:1px solid var(--border);border-radius:5px;color:var(--muted);cursor:pointer;font-size:.7rem;padding:.2rem .5rem;font-family:var(--sans);transition:all .15s;flex-shrink:0}
+.tab-close:hover{border-color:var(--danger);color:var(--danger);background:rgba(255,79,106,.08)}
+.tab-empty{color:var(--muted);font-size:.82rem;font-style:italic}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo"><span class="logo-dot"></span>ScreenLink</div>
+  <div class="mode-toggle">
+    <button class="mode-btn active" id="btn-host" onclick="setMode('host')">Host</button>
+    <button class="mode-btn" id="btn-viewer" onclick="setMode('viewer')">Viewer</button>
+  </div>
+</header>
+
+<main>
+
+  <!-- ═══ HOST PANEL ═══ -->
+  <div id="host-panel" class="active">
+
+    <div class="card">
+      <div class="card-title">Session Code — Share this with your viewer</div>
+      <div class="code-display">
+        <div class="code-digits" id="host-code">——————</div>
+        <div class="code-meta">
+          <div class="timer-bar-wrap"><div class="timer-bar" id="timer-bar" style="width:100%"></div></div>
+          <div class="timer-label" id="timer-label">5:00</div>
+        </div>
+      </div>
+      <div style="margin-top:1rem" class="row">
+        <div class="status idle" id="host-status"><span class="status-dot"></span> Idle</div>
+        <span class="viewer-count" id="viewer-count-label"></span>
+        <span class="spacer"></span>
+        <button class="btn primary" id="btn-share" onclick="startShare()">
+          <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+          Share Screen
+        </button>
+        <button class="btn danger" id="btn-stop" onclick="stopShare()" style="display:none">
+          <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+          Stop
+        </button>
+      </div>
+      <div class="connection-info" id="host-conn-info"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Your Screen Preview</div>
+      <div class="screen-wrap">
+        <div class="screen-placeholder" id="host-placeholder">
+          <svg width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+          <p>Click "Share Screen" to begin</p>
+        </div>
+        <video id="host-video" autoplay muted playsinline style="display:none"></video>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Incoming Commands</div>
+      <div class="cmd-log" id="host-log">
+        <div style="color:var(--muted)">Waiting for viewer commands…</div>
+      </div>
+    </div>
+
+    <div class="info-box">
+      <strong>Cross-device:</strong> Both computers must open this same URL. The host shares their screen and gives the viewer the 6-digit code. Codes refresh every <strong>5 minutes</strong>. The viewer can watch your screen live, open URLs in new tabs, and close those tabs remotely.
+    </div>
+
+  </div>
+
+  <!-- ═══ VIEWER PANEL ═══ -->
+  <div id="viewer-panel">
+
+    <div class="card">
+      <div class="card-title">Enter Session Code</div>
+      <div class="code-input-wrap">
+        <input type="text" class="code-input" id="viewer-code-input" maxlength="6" placeholder="000000"
+          oninput="this.value=this.value.replace(/\D/g,'')"
+          onkeydown="if(event.key==='Enter')joinSession()">
+        <button class="btn primary" onclick="joinSession()">Connect</button>
+        <button class="btn danger" id="btn-disconnect" onclick="leaveSession()" style="display:none">Disconnect</button>
+      </div>
+      <div style="margin-top:.85rem" class="row">
+        <div class="status idle" id="viewer-status"><span class="status-dot"></span> Not connected</div>
+      </div>
+      <div class="connection-info" id="viewer-conn-info"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Remote Screen</div>
+      <div class="screen-wrap">
+        <div class="screen-placeholder" id="viewer-placeholder">
+          <svg width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+          <p>Connect to see the remote screen</p>
+        </div>
+        <video id="viewer-video" autoplay playsinline style="display:none"></video>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Open URL on Host's Computer</div>
+      <div class="url-bar-wrap">
+        <input type="text" class="url-input" id="url-input" placeholder="https://example.com"
+          onkeydown="if(event.key==='Enter')sendUrl()">
+        <button class="btn primary" onclick="sendUrl()">
+          <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+          Open Tab
+        </button>
+      </div>
+      <div class="quick-sites">
+        <button class="quick-btn" onclick="quickOpen('https://google.com')">Google</button>
+        <button class="quick-btn" onclick="quickOpen('https://youtube.com')">YouTube</button>
+        <button class="quick-btn" onclick="quickOpen('https://github.com')">GitHub</button>
+        <button class="quick-btn" onclick="quickOpen('https://wikipedia.org')">Wikipedia</button>
+        <button class="quick-btn" onclick="quickOpen('https://reddit.com')">Reddit</button>
+        <button class="quick-btn" onclick="quickOpen('https://x.com')">X / Twitter</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Open Tabs on Host</div>
+      <div class="tab-list" id="viewer-tab-list">
+        <div class="tab-empty">No tabs opened yet.</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Command History</div>
+      <div class="cmd-log" id="viewer-log">
+        <div style="color:var(--muted)">No commands sent yet.</div>
+      </div>
+    </div>
+
+  </div>
+
+</main>
+<div id="toast"></div>
+
+<script>
+// ─────────────────────────────────────────────────────
+// SOCKET + STATE
+// ─────────────────────────────────────────────────────
+const socket = io({ transports: ['websocket', 'polling'] });
+
+const CODE_DURATION = 5 * 60;
+let hostStream = null;
+let timerInterval = null;
+let codeExpiry = null;
+let currentCode = null;
+let isHosting = false;
+
+// WebRTC state
+let peerConnections = {};
+let viewerPc = null;
+
+// Tab tracking: tabId -> { win, url } (host side)
+let openedTabs = {};
+// Tab list for viewer: tabId -> url
+let viewerTabs = {};
+
+const ICE_SERVERS = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+  ]
+};
+
+// ─────────────────────────────────────────────────────
+// MODE
+// ─────────────────────────────────────────────────────
+function setMode(mode) {
+  document.getElementById('btn-host').classList.toggle('active', mode === 'host');
+  document.getElementById('btn-viewer').classList.toggle('active', mode === 'viewer');
+  document.getElementById('host-panel').classList.toggle('active', mode === 'host');
+  document.getElementById('viewer-panel').classList.toggle('active', mode === 'viewer');
+}
+
+// ─────────────────────────────────────────────────────
+// TIMER
+// ─────────────────────────────────────────────────────
+function startTimer() {
+  codeExpiry = Date.now() + CODE_DURATION * 1000;
+  if (timerInterval) clearInterval(timerInterval);
+  timerInterval = setInterval(() => {
+    const remaining = Math.max(0, Math.ceil((codeExpiry - Date.now()) / 1000));
+    const m = Math.floor(remaining / 60);
+    const s = remaining % 60;
+    document.getElementById('timer-label').textContent = `${m}:${String(s).padStart(2,'0')}`;
+    const pct = (remaining / CODE_DURATION) * 100;
+    const bar = document.getElementById('timer-bar');
+    bar.style.width = pct + '%';
+    bar.style.background = pct < 20 ? 'var(--danger)' : 'linear-gradient(90deg,var(--accent),var(--accent2))';
+    if (remaining === 0 && isHosting) socket.emit('host:refresh');
+  }, 1000);
+}
+
+// ─────────────────────────────────────────────────────
+// HOST — SCREEN SHARE
+// ─────────────────────────────────────────────────────
+async function startShare() {
+  try {
+    const stream = await navigator.mediaDevices.getDisplayMedia({
+      video: { cursor: 'always', frameRate: 15 },
+      audio: false,
+    });
+    hostStream = stream;
+    isHosting = true;
+
+    const vid = document.getElementById('host-video');
+    vid.srcObject = stream;
+    vid.style.display = 'block';
+    document.getElementById('host-placeholder').style.display = 'none';
+    document.getElementById('btn-share').style.display = 'none';
+    document.getElementById('btn-stop').style.display = 'inline-flex';
+
+    stream.getVideoTracks()[0].addEventListener('ended', stopShare);
+    socket.emit('host:create');
+    setHostStatus('waiting');
+    toast('Screen sharing started! Waiting for a viewer…');
+  } catch(err) {
+    if (err.name !== 'NotAllowedError') toast('Could not start screen share: ' + err.message);
+  }
+}
+
+function stopShare() {
+  isHosting = false;
+  if (hostStream) { hostStream.getTracks().forEach(t => t.stop()); hostStream = null; }
+  Object.values(peerConnections).forEach(pc => pc.close());
+  peerConnections = {};
+  openedTabs = {};
+  if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+
+  const vid = document.getElementById('host-video');
+  vid.srcObject = null; vid.style.display = 'none';
+  document.getElementById('host-placeholder').style.display = 'flex';
+  document.getElementById('host-code').textContent = '——————';
+  document.getElementById('timer-label').textContent = '5:00';
+  document.getElementById('timer-bar').style.width = '100%';
+  document.getElementById('viewer-count-label').textContent = '';
+  document.getElementById('host-conn-info').textContent = '';
+  setHostStatus('idle');
+  document.getElementById('btn-share').style.display = 'inline-flex';
+  document.getElementById('btn-stop').style.display = 'none';
+  toast('Screen sharing stopped.');
+}
+
+// ─────────────────────────────────────────────────────
+// HOST — WebRTC offer
+// ─────────────────────────────────────────────────────
+async function createOffer(viewerId) {
+  const pc = new RTCPeerConnection(ICE_SERVERS);
+  peerConnections[viewerId] = pc;
+
+  if (hostStream) hostStream.getTracks().forEach(track => pc.addTrack(track, hostStream));
+
+  pc.onicecandidate = ({ candidate }) => {
+    if (candidate) socket.emit('rtc:ice', { to: viewerId, candidate });
+  };
+
+  pc.onconnectionstatechange = () => {
+    const count = Object.values(peerConnections).filter(p => p.connectionState === 'connected').length;
+    document.getElementById('viewer-count-label').textContent = count ? `${count} viewer(s)` : '';
+    if (pc.connectionState === 'connected') {
+      setHostStatus('live');
+      document.getElementById('host-conn-info').textContent = 'WebRTC connected — peer-to-peer stream active';
+    }
+  };
+
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+  socket.emit('rtc:offer', { to: viewerId, offer });
+}
+
+// ─────────────────────────────────────────────────────
+// VIEWER — JOIN
+// ─────────────────────────────────────────────────────
+function joinSession() {
+  const code = document.getElementById('viewer-code-input').value.trim();
+  if (!/^\d{6}$/.test(code)) {
+    const inp = document.getElementById('viewer-code-input');
+    inp.classList.add('error');
+    setTimeout(() => inp.classList.remove('error'), 500);
+    toast('Enter a valid 6-digit code.');
+    return;
+  }
+  setViewerStatus('waiting');
+  socket.emit('viewer:join', { code });
+  logViewer('Connecting to session ' + code + '…');
+}
+
+function leaveSession() {
+  if (viewerPc) { viewerPc.close(); viewerPc = null; }
+  const vid = document.getElementById('viewer-video');
+  vid.srcObject = null; vid.style.display = 'none';
+  document.getElementById('viewer-placeholder').style.display = 'flex';
+  document.getElementById('btn-disconnect').style.display = 'none';
+  document.getElementById('viewer-conn-info').textContent = '';
+  viewerTabs = {};
+  renderViewerTabs();
+  setViewerStatus('idle');
+  logViewer('Disconnected.');
+  toast('Disconnected.');
+}
+
+// ─────────────────────────────────────────────────────
+// VIEWER — WebRTC answer
+// ─────────────────────────────────────────────────────
+async function handleOffer(hostId, offer) {
+  if (viewerPc) viewerPc.close();
+  const pc = new RTCPeerConnection(ICE_SERVERS);
+  viewerPc = pc;
+
+  pc.onicecandidate = ({ candidate }) => {
+    if (candidate) socket.emit('rtc:ice', { to: hostId, candidate });
+  };
+
+  pc.ontrack = (e) => {
+    const vid = document.getElementById('viewer-video');
+    vid.srcObject = e.streams[0];
+    vid.style.display = 'block';
+    document.getElementById('viewer-placeholder').style.display = 'none';
+    setViewerStatus('live');
+    toast('Connected! Watching remote screen.');
+    logViewer('Stream connected — peer-to-peer WebRTC active.');
+    document.getElementById('viewer-conn-info').textContent = 'WebRTC P2P stream active';
+  };
+
+  pc.onconnectionstatechange = () => {
+    if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
+      setViewerStatus('idle');
+      toast('Connection lost.');
+    }
+  };
+
+  await pc.setRemoteDescription(new RTCSessionDescription(offer));
+  const answer = await pc.createAnswer();
+  await pc.setLocalDescription(answer);
+  socket.emit('rtc:answer', { to: hostId, answer });
+  document.getElementById('btn-disconnect').style.display = 'inline-flex';
+}
+
+// ─────────────────────────────────────────────────────
+// VIEWER — SEND URL / CLOSE TAB
+// ─────────────────────────────────────────────────────
+function sendUrl() {
+  const raw = document.getElementById('url-input').value.trim();
+  if (!raw) return;
+  let url = raw;
+  if (!url.startsWith('http://') && !url.startsWith('https://')) url = 'https://' + url;
+  socket.emit('cmd:open-url', { url });
+  logViewer('Sent: open ' + url);
+  document.getElementById('url-input').value = '';
+  toast('Command sent!');
+}
+
+function quickOpen(url) {
+  document.getElementById('url-input').value = url;
+  sendUrl();
+}
+
+function closeTab(tabId) {
+  socket.emit('cmd:close-tab', { tabId });
+  logViewer('Sent: close tab ' + tabId);
+  toast('Close command sent.');
+}
+
+// ─────────────────────────────────────────────────────
+// VIEWER — TAB LIST UI
+// ─────────────────────────────────────────────────────
+function renderViewerTabs() {
+  const list = document.getElementById('viewer-tab-list');
+  const ids = Object.keys(viewerTabs);
+  if (!ids.length) {
+    list.innerHTML = '<div class="tab-empty">No tabs opened yet.</div>';
+    return;
+  }
+  list.innerHTML = '';
+  ids.forEach(tabId => {
+    const url = viewerTabs[tabId];
+    let display = url;
+    try { display = new URL(url).hostname; } catch(e) {}
+    const favicon = `https://www.google.com/s2/favicons?domain=${encodeURIComponent(url)}&sz=16`;
+    const item = document.createElement('div');
+    item.className = 'tab-item';
+    item.dataset.tabid = tabId;
+    item.innerHTML = `
+      <img class="tab-favicon" src="${favicon}" alt="" onerror="this.style.display='none'">
+      <span class="tab-url" title="${esc(url)}">${esc(display)}</span>
+      <button class="tab-close" onclick="closeTab('${esc(tabId)}')">✕ Close</button>
+    `;
+    list.appendChild(item);
+  });
+}
+
+// ─────────────────────────────────────────────────────
+// SOCKET EVENTS
+// ─────────────────────────────────────────────────────
+socket.on('connect', () => {
+  document.getElementById('host-conn-info').textContent = '';
+});
+
+socket.on('host:code', ({ code }) => {
+  currentCode = code;
+  document.getElementById('host-code').textContent = code;
+  startTimer();
+});
+
+socket.on('viewer:joined', ({ viewerId }) => {
+  logHost('Viewer connected, initiating stream…');
+  createOffer(viewerId);
+});
+
+socket.on('viewer:left', ({ viewerId }) => {
+  if (peerConnections[viewerId]) { peerConnections[viewerId].close(); delete peerConnections[viewerId]; }
+  logHost('Viewer disconnected.');
+  const count = Object.keys(peerConnections).length;
+  document.getElementById('viewer-count-label').textContent = count ? `${count} viewer(s)` : '';
+  if (!count) setHostStatus('waiting');
+});
+
+socket.on('viewer:ok', () => { logViewer('Session found, establishing WebRTC…'); });
+
+socket.on('viewer:error', ({ message }) => {
+  setViewerStatus('idle');
+  toast('Error: ' + message);
+  logViewer('Error: ' + message);
+});
+
+socket.on('rtc:offer', async ({ from, offer }) => { await handleOffer(from, offer); });
+
+socket.on('rtc:answer', async ({ from, answer }) => {
+  const pc = peerConnections[from];
+  if (pc) await pc.setRemoteDescription(new RTCSessionDescription(answer));
+});
+
+socket.on('rtc:ice', async ({ from, candidate }) => {
+  const pc = peerConnections[from] || viewerPc;
+  if (pc && candidate) { try { await pc.addIceCandidate(new RTCIceCandidate(candidate)); } catch(e) {} }
+});
+
+// Host receives open-url command from viewer
+socket.on('cmd:open-url', ({ url }) => {
+  const tabId = 'tab_' + Date.now() + '_' + Math.random().toString(36).slice(2,6);
+  const win = window.open(url, '_blank');
+  openedTabs[tabId] = { win, url };
+  socket.emit('host:tab-opened', { tabId, url });
+  logHost('Opened tab: ' + url);
+  toast('Viewer opened: ' + url);
+});
+
+// Host receives close-tab command from viewer
+socket.on('cmd:close-tab', ({ tabId }) => {
+  const tab = openedTabs[tabId];
+  if (tab && tab.win && !tab.win.closed) {
+    tab.win.close();
+    delete openedTabs[tabId];
+    socket.emit('host:tab-closed', { tabId });
+    logHost('Closed tab: ' + tab.url);
+    toast('Viewer closed a tab.');
+  } else {
+    // Tab may have been manually closed already
+    delete openedTabs[tabId];
+    socket.emit('host:tab-closed', { tabId });
+  }
+});
+
+// Viewer receives confirmation that host opened a tab
+socket.on('host:tab-opened', ({ tabId, url }) => {
+  viewerTabs[tabId] = url;
+  renderViewerTabs();
+});
+
+// Viewer receives confirmation that host closed a tab
+socket.on('host:tab-closed', ({ tabId }) => {
+  delete viewerTabs[tabId];
+  renderViewerTabs();
+  logViewer('Tab closed: ' + tabId);
+});
+
+socket.on('host:disconnected', () => {
+  setViewerStatus('idle');
+  toast('Host disconnected.');
+  logViewer('Host ended the session.');
+  const vid = document.getElementById('viewer-video');
+  vid.srcObject = null; vid.style.display = 'none';
+  document.getElementById('viewer-placeholder').style.display = 'flex';
+  document.getElementById('btn-disconnect').style.display = 'none';
+  document.getElementById('viewer-conn-info').textContent = '';
+  viewerTabs = {};
+  renderViewerTabs();
+});
+
+socket.on('session:expired', () => {
+  toast('Session code expired. Ask the host for a new code.');
+  setViewerStatus('idle');
+});
+
+// ─────────────────────────────────────────────────────
+// UI HELPERS
+// ─────────────────────────────────────────────────────
+function setHostStatus(state) {
+  const el = document.getElementById('host-status');
+  const labels = { idle:'Idle', waiting:'Waiting for viewer', live:'Live' };
+  el.className = 'status ' + state;
+  el.innerHTML = `<span class="status-dot"></span> ${labels[state]}`;
+}
+
+function setViewerStatus(state) {
+  const el = document.getElementById('viewer-status');
+  const labels = { idle:'Not connected', waiting:'Connecting…', live:'Connected' };
+  el.className = 'status ' + state;
+  el.innerHTML = `<span class="status-dot"></span> ${labels[state]}`;
+}
+
+function logHost(text) {
+  const log = document.getElementById('host-log');
+  if (log.firstChild && !log.firstChild.className) log.innerHTML = '';
+  const now = new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  const e = document.createElement('div');
+  e.className = 'cmd-log-entry';
+  e.innerHTML = `<span class="cmd-log-time">${now}</span><span class="cmd-log-text">${esc(text)}</span>`;
+  log.appendChild(e); log.scrollTop = log.scrollHeight;
+}
+
+function logViewer(text) {
+  const log = document.getElementById('viewer-log');
+  if (log.firstChild && !log.firstChild.className) log.innerHTML = '';
+  const now = new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  const e = document.createElement('div');
+  e.className = 'cmd-log-entry';
+  e.innerHTML = `<span class="cmd-log-time">${now}</span><span class="cmd-log-text">${esc(text)}</span>`;
+  log.appendChild(e); log.scrollTop = log.scrollHeight;
+}
+
+let toastTimer = null;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 3200);
+}
+
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+</body>
+</html>
