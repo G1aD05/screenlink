@@ -1,0 +1,2762 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ScreenLink</title>
+<script src="/socket.io/socket.io.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&display=swap');
+
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+:root {
+  --bg:#0a0a0f;
+  --surface:#111118;
+  --surface2:#1a1a24;
+  --border:rgba(120,120,200,0.15);
+  --border-bright:rgba(120,120,200,0.35);
+  --accent:#6c63ff;
+  --accent2:#3ecfcf;
+  --text:#e8e8f0;
+  --muted:#888899;
+  --danger:#ff4f6a;
+  --mono:'Space Mono',monospace;
+  --sans:'DM Sans',sans-serif;
+}
+
+body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:100vh;display:flex;flex-direction:column}
+
+header{display:flex;align-items:center;justify-content:space-between;padding:1.1rem 2rem;border-bottom:1px solid var(--border);background:var(--surface)}
+.logo{font-family:var(--mono);font-size:1.1rem;font-weight:700;letter-spacing:-0.02em;display:flex;align-items:center;gap:.5rem}
+.logo-dot{width:8px;height:8px;border-radius:50%;background:var(--accent2);display:inline-block;animation:pulse 2s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.8)}}
+
+.mode-toggle{display:flex;background:var(--bg);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.mode-btn{padding:.45rem 1.2rem;font-family:var(--sans);font-size:.82rem;font-weight:500;background:none;border:none;color:var(--muted);cursor:pointer;transition:all .2s;letter-spacing:.03em}
+.mode-btn.active{background:var(--accent);color:#fff}
+
+main{flex:1;display:flex;flex-direction:column;padding:2rem;max-width:900px;width:100%;margin:0 auto;gap:1.5rem}
+
+#host-panel,#viewer-panel{display:none;flex-direction:column;gap:1.5rem}
+#host-panel.active,#viewer-panel.active{display:flex}
+
+.card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:1.75rem}
+.card-title{font-size:.72rem;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:1.2rem}
+
+.code-display{display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap}
+.code-digits{font-family:var(--mono);font-size:3.2rem;font-weight:700;letter-spacing:.25em;color:var(--accent2);text-shadow:0 0 30px rgba(62,207,207,.3);flex:1;min-width:240px;user-select:all}
+.code-meta{display:flex;flex-direction:column;align-items:flex-end;gap:.4rem}
+.timer-bar-wrap{width:120px;height:4px;background:var(--border);border-radius:2px;overflow:hidden}
+.timer-bar{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:2px;transition:width 1s linear}
+.timer-label{font-size:.75rem;color:var(--muted);font-family:var(--mono)}
+
+.screen-wrap{position:relative;background:#000;border-radius:10px;overflow:hidden;aspect-ratio:16/9;border:1px solid var(--border)}
+.screen-wrap video,.screen-wrap img{width:100%;height:100%;object-fit:contain;display:block}
+.screen-placeholder{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.75rem;color:var(--muted)}
+.screen-placeholder svg{opacity:.3}
+.screen-placeholder p{font-size:.9rem}
+.screen-controls{position:absolute;bottom:0;left:0;right:0;padding:.6rem .75rem;display:flex;align-items:center;justify-content:flex-end;gap:.5rem;background:linear-gradient(transparent,rgba(0,0,0,.7));opacity:0;transition:opacity .2s;pointer-events:none}
+.screen-wrap:hover .screen-controls{opacity:1;pointer-events:auto}
+.screen-ctrl-btn{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);border-radius:6px;color:#fff;cursor:pointer;padding:.3rem .5rem;font-size:.75rem;font-family:var(--sans);display:flex;align-items:center;gap:.3rem;transition:background .15s}
+.screen-ctrl-btn:hover{background:rgba(255,255,255,.25)}
+.screen-ctrl-btn svg{flex-shrink:0}
+.screen-wrap:fullscreen,.screen-wrap:-webkit-full-screen{border-radius:0;aspect-ratio:unset;width:100vw;height:100vh}
+.screen-wrap:fullscreen video,.screen-wrap:-webkit-full-screen video{width:100%;height:100%;object-fit:contain}
+.screen-wrap:fullscreen .screen-controls,.screen-wrap:-webkit-full-screen .screen-controls{opacity:0}
+.screen-wrap:fullscreen:hover .screen-controls,.screen-wrap:-webkit-full-screen:hover .screen-controls{opacity:1;pointer-events:auto}
+
+.btn{display:inline-flex;align-items:center;gap:.5rem;padding:.65rem 1.4rem;font-family:var(--sans);font-size:.88rem;font-weight:500;border-radius:8px;border:1px solid var(--border-bright);background:var(--surface2);color:var(--text);cursor:pointer;transition:all .18s;white-space:nowrap}
+.btn:hover{background:var(--surface);border-color:var(--accent);color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.primary:hover{background:#5a52e0;border-color:#5a52e0;color:#fff}
+.btn.danger{background:transparent;border-color:var(--danger);color:var(--danger)}
+.btn.danger:hover{background:rgba(255,79,106,.1)}
+.btn.sm{padding:.35rem .8rem;font-size:.78rem}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+
+.status{display:inline-flex;align-items:center;gap:.4rem;font-size:.78rem;font-weight:500;padding:.3rem .75rem;border-radius:20px;border:1px solid}
+.status.idle{border-color:var(--border);color:var(--muted)}
+.status.live{border-color:rgba(62,207,207,.4);color:var(--accent2);background:rgba(62,207,207,.08)}
+.status.waiting{border-color:rgba(108,99,255,.4);color:var(--accent);background:rgba(108,99,255,.08)}
+.status-dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+.status.live .status-dot{animation:pulse 1s ease-in-out infinite}
+
+.code-input-wrap{display:flex;gap:.75rem;align-items:center;flex-wrap:wrap}
+.code-input{font-family:var(--mono);font-size:1.8rem;font-weight:700;letter-spacing:.2em;background:var(--bg);border:2px solid var(--border-bright);border-radius:10px;color:var(--accent2);padding:.6rem 1rem;width:220px;outline:none;text-align:center;transition:border-color .2s}
+.code-input:focus{border-color:var(--accent2);box-shadow:0 0 0 3px rgba(62,207,207,.1)}
+.code-input.error{border-color:var(--danger);animation:shake .3s}
+@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
+
+.url-bar-wrap{display:flex;gap:.6rem;align-items:center}
+.url-input{flex:1;font-family:var(--sans);font-size:.9rem;background:var(--bg);border:1px solid var(--border-bright);border-radius:8px;color:var(--text);padding:.6rem 1rem;outline:none;transition:border-color .2s}
+.url-input:focus{border-color:var(--accent)}
+.url-input::placeholder{color:var(--muted)}
+
+.cmd-log{background:var(--bg);border-radius:8px;padding:.75rem 1rem;font-family:var(--mono);font-size:.78rem;color:var(--muted);max-height:120px;overflow-y:auto;display:flex;flex-direction:column;gap:.3rem}
+.cmd-log-entry{display:flex;gap:.75rem;align-items:baseline}
+.cmd-log-time{color:var(--accent);flex-shrink:0}
+.cmd-log-text{color:var(--text);word-break:break-all}
+
+.info-box{background:rgba(108,99,255,.07);border:1px solid rgba(108,99,255,.2);border-radius:10px;padding:1rem 1.25rem;font-size:.83rem;color:var(--muted);line-height:1.6}
+.info-box strong{color:var(--accent2);font-weight:500}
+
+.row{display:flex;gap:.75rem;align-items:center;flex-wrap:wrap}
+.spacer{flex:1}
+
+#toast{position:fixed;bottom:2rem;right:2rem;background:var(--surface2);border:1px solid var(--border-bright);border-radius:10px;padding:.75rem 1.25rem;font-size:.85rem;color:var(--text);opacity:0;transform:translateY(10px);transition:all .25s;z-index:999;pointer-events:none;max-width:300px}
+#toast.show{opacity:1;transform:translateY(0)}
+
+.viewer-count{font-size:.8rem;color:var(--accent2);font-family:var(--mono)}
+
+.quick-sites{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.75rem}
+.quick-btn{padding:.35rem .85rem;font-size:.78rem;border-radius:20px;border:1px solid var(--border);background:var(--surface2);color:var(--muted);cursor:pointer;transition:all .15s;font-family:var(--sans)}
+.quick-btn:hover{border-color:var(--accent2);color:var(--accent2)}
+
+.connection-info{font-size:.75rem;color:var(--muted);font-family:var(--mono);margin-top:.5rem}
+.status-help{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:50%;background:rgba(108,99,255,.3);color:var(--accent);font-size:.65rem;font-weight:700;cursor:help;margin-left:.3rem;font-style:normal;position:relative;top:-1px;border:1px solid rgba(108,99,255,.5)}
+.status-help:hover::after{content:attr(title);position:absolute;left:50%;top:calc(100% + 6px);transform:translateX(-50%);background:var(--surface2);border:1px solid var(--border-bright);border-radius:8px;padding:.5rem .75rem;font-size:.75rem;color:var(--text);white-space:normal;width:220px;z-index:999;line-height:1.5;font-weight:400;pointer-events:none}
+
+/* Popup prompt on host */
+.popup-prompt{display:flex;align-items:center;gap:.65rem;background:rgba(108,99,255,.12);border:1px solid rgba(108,99,255,.35);border-radius:10px;padding:.7rem 1rem;font-size:.84rem;color:var(--text);flex-wrap:wrap}
+.popup-prompt strong{color:var(--accent2)}
+.popup-prompt svg{flex-shrink:0;color:var(--accent)}
+.popup-prompt span{flex:1;min-width:160px}
+.popup-prompt-btn{background:var(--accent);border:none;border-radius:7px;color:#fff;cursor:pointer;font-family:var(--sans);font-size:.8rem;font-weight:500;padding:.4rem .9rem;transition:background .15s;white-space:nowrap}
+.popup-prompt-btn:hover{background:#5a52e0}
+.popup-prompt-dismiss{background:none;border:1px solid var(--border);border-radius:6px;color:var(--muted);cursor:pointer;font-size:.75rem;padding:.3rem .5rem;transition:all .15s}
+.popup-prompt-dismiss:hover{border-color:var(--danger);color:var(--danger)}
+
+/* Open mode toggle */
+.open-mode-row{display:flex;align-items:center;gap:.75rem;margin-top:.85rem}
+.open-mode-label{font-size:.75rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.open-mode-toggle{display:flex;background:var(--bg);border:1px solid var(--border);border-radius:7px;overflow:hidden}
+.open-mode-btn{padding:.3rem .9rem;font-size:.8rem;font-weight:500;background:none;border:none;color:var(--muted);cursor:pointer;transition:all .15s;font-family:var(--sans)}
+.open-mode-btn.active{background:var(--accent);color:#fff}
+
+/* Popup size controls */
+.popup-size-row{display:flex;flex-direction:column;gap:.6rem;margin-top:.75rem;padding:.85rem;background:var(--bg);border-radius:9px;border:1px solid var(--border)}
+.size-field{display:flex;align-items:center;gap:.5rem}
+.size-label{font-size:.72rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);min-width:42px}
+.size-input{width:80px;background:var(--surface);border:1px solid var(--border-bright);border-radius:6px;color:var(--text);padding:.3rem .5rem;font-family:var(--mono);font-size:.82rem;outline:none;text-align:right}
+.size-input:focus{border-color:var(--accent2)}
+.size-unit{font-size:.72rem;color:var(--muted);font-family:var(--mono)}
+.preset-row{display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;margin-top:.25rem}
+
+/* Info panel */
+.info-grid{display:flex;flex-direction:column;gap:.5rem}
+.info-row{display:flex;align-items:baseline;gap:.75rem;padding:.4rem .6rem;background:var(--bg);border-radius:7px}
+.info-label{font-size:.72rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);min-width:90px;flex-shrink:0}
+.info-val{font-size:.84rem;color:var(--text);font-family:var(--mono);word-break:break-all}
+.info-url{color:var(--accent2);font-size:.78rem}
+
+/* ── Input mode ── */
+.input-mode-row{display:flex;align-items:center;gap:.75rem;flex-wrap:wrap}
+
+/* ── Sound panel ── */
+.sound-drop-zone{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.5rem;padding:1.5rem;border:2px dashed var(--border-bright);border-radius:10px;cursor:pointer;transition:all .2s;text-align:center}
+.sound-drop-zone:hover,.sound-drop-zone.drag-over{border-color:var(--accent2);background:rgba(62,207,207,.05)}
+.sound-drop-zone svg{color:var(--muted);opacity:.5}
+.sound-drop-text{font-size:.88rem;color:var(--muted)}
+.sound-drop-sub{font-size:.75rem;color:var(--muted);opacity:.6}
+.sound-loaded{display:flex;flex-direction:column;gap:.85rem;margin-top:.75rem}
+.sound-info{display:flex;align-items:center;gap:.6rem;font-size:.84rem;font-family:var(--mono);color:var(--accent2);background:var(--bg);padding:.6rem .85rem;border-radius:8px;border:1px solid var(--border)}
+.sound-info svg{flex-shrink:0}
+.sound-info span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sound-controls{display:flex;flex-direction:column;gap:.65rem}
+.sound-vol-row{display:flex;align-items:center;gap:.65rem}
+.vol-slider{flex:1;accent-color:var(--accent2);cursor:pointer;height:4px}
+.vol-label{font-size:.75rem;font-family:var(--mono);color:var(--muted);min-width:36px;text-align:right}
+.sound-status{font-size:.8rem;padding:.5rem .75rem;border-radius:7px;background:rgba(108,99,255,.1);border:1px solid rgba(108,99,255,.2);color:var(--accent);font-family:var(--mono);margin-top:.75rem}
+.sound-progress-wrap{display:flex;flex-direction:column;gap:.35rem;margin-top:.25rem}
+.sound-progress-track{height:4px;background:var(--border);border-radius:2px;overflow:hidden;cursor:pointer}
+.sound-progress-bar{height:100%;width:0%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:2px;transition:width .25s linear}
+.sound-progress-labels{display:flex;justify-content:space-between;font-size:.72rem;font-family:var(--mono);color:var(--muted)}
+
+/* ── Tab list ── */
+.tab-list{display:flex;flex-direction:column;gap:.5rem;margin-top:.25rem}
+.tab-item{display:flex;align-items:center;gap:.6rem;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:.5rem .75rem;font-size:.82rem}
+.tab-favicon{width:14px;height:14px;flex-shrink:0;opacity:.7}
+.tab-url{flex:1;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--mono);font-size:.75rem}
+.tab-close{background:none;border:1px solid var(--border);border-radius:5px;color:var(--muted);cursor:pointer;font-size:.7rem;padding:.2rem .5rem;font-family:var(--sans);transition:all .15s;flex-shrink:0}
+.tab-close:hover{border-color:var(--danger);color:var(--danger);background:rgba(255,79,106,.08)}
+.tab-empty{color:var(--muted);font-size:.82rem;font-style:italic}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo"><span class="logo-dot"></span>ScreenLink</div>
+  <div class="mode-toggle">
+    <button class="mode-btn active" id="btn-host" onclick="setMode('host')">Host</button>
+    <button class="mode-btn" id="btn-viewer" onclick="setMode('viewer')">Viewer</button>
+  </div>
+</header>
+
+<main>
+
+  <!-- ═══ HOST PANEL ═══ -->
+  <div id="host-panel" class="active">
+
+    <div class="card">
+      <div class="card-title">Session Code — Share this with your viewer</div>
+      <div class="code-display">
+        <div class="code-digits" id="host-code">——————</div>
+        <div class="code-meta">
+          <div class="timer-bar-wrap"><div class="timer-bar" id="timer-bar" style="width:100%"></div></div>
+          <div class="timer-label" id="timer-label">5:00</div>
+        </div>
+      </div>
+      <div style="margin-top:1rem;margin-bottom:.85rem" id="host-password-wrap">
+        <div class="card-title" style="margin-bottom:.5rem">Session Password <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">(optional)</span></div>
+        <div class="row" style="gap:.6rem">
+          <div style="position:relative;flex:1;max-width:280px">
+            <input type="password" class="url-input" id="host-password" placeholder="Leave blank for no password" style="width:100%;padding-right:2.5rem">
+            <button onclick="togglePasswordVis('host-password',this)" style="position:absolute;right:.6rem;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--muted);padding:0;font-size:.8rem">👁</button>
+          </div>
+          <div class="status idle" id="host-password-status" style="display:none">
+            <span class="status-dot"></span> <span id="host-password-label">No password</span>
+          </div>
+        </div>
+      </div>
+      <div class="row">
+        <div class="status idle" id="host-status"><span class="status-dot"></span> Idle</div>
+        <span class="viewer-count" id="viewer-count-label"></span>
+        <span class="spacer"></span>
+        <button class="btn primary" id="btn-share" onclick="startShare()">
+          <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+          Share Screen
+        </button>
+        <button class="btn danger" id="btn-stop" onclick="stopShare()" style="display:none">
+          <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+          Stop
+        </button>
+      </div>
+      <div class="connection-info" id="host-conn-info"></div>
+    </div>
+
+    <div id="popup-prompt-container" style="display:none;flex-direction:column;gap:.5rem;margin-bottom:.25rem"></div>
+
+    <div class="card">
+      <div class="card-title">Your Screen Preview</div>
+      <div class="screen-wrap" id="host-screen-wrap">
+        <div class="screen-placeholder" id="host-placeholder">
+          <svg width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+          <p>Click "Share Screen" to begin</p>
+        </div>
+        <video id="host-video" autoplay muted playsinline style="display:none"></video>
+        <div class="screen-controls">
+          <button class="screen-ctrl-btn" onclick="toggleFullscreen('host-screen-wrap', this)">
+            <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/></svg>
+            Fullscreen
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Incoming Commands</div>
+      <div class="cmd-log" id="host-log">
+        <div style="color:var(--muted)">Waiting for viewer commands…</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Public Broadcast</div>
+      <div class="row" style="gap:.75rem;flex-wrap:wrap">
+        <div class="open-mode-toggle">
+          <button class="open-mode-btn active" id="pub-off-btn" onclick="setPublicBroadcast(false)">Private</button>
+          <button class="open-mode-btn" id="pub-on-btn" onclick="setPublicBroadcast(true)">Public</button>
+        </div>
+        <input type="text" class="url-input" id="pub-label" placeholder="Your display name (e.g. Ezra's PC)"
+          style="flex:1;max-width:260px;font-size:.85rem" oninput="updatePublicLabel()">
+      </div>
+      <div style="margin-top:.6rem;font-size:.8rem;color:var(--muted);line-height:1.5">
+        When <strong style="color:var(--accent2)">Public</strong>, anyone on the Viewer tab can see and join your stream without a code.
+      </div>
+    </div>
+
+    <div class="card" id="ext-status-card">
+      <div class="card-title">ScreenLink Controller Extension</div>
+      <div class="row">
+        <div class="status idle" id="ext-status"><span class="status-dot"></span> Not detected</div>
+        <span class="spacer"></span>
+        <button class="btn" onclick="checkExtension()">Check Extension</button>
+      </div>
+      <div style="margin-top:.75rem;font-size:.8rem;color:var(--muted);line-height:1.6">
+        Install the <strong style="color:var(--accent2)">ScreenLink Controller</strong> extension on this computer to allow the viewer to control mouse and keyboard in browser tabs.
+      </div>
+    </div>
+
+    <div class="info-box">
+      <strong>Cross-device:</strong> Both computers must open this same URL. The host shares their screen and gives the viewer the 6-digit code. Codes refresh every <strong>5 minutes</strong>. The viewer can watch your screen live, open URLs in new tabs, and close those tabs remotely.
+    </div>
+
+  </div>
+
+  <!-- ═══ VIEWER PANEL ═══ -->
+  <div id="viewer-panel">
+
+    <div class="card">
+      <div class="card-title">Public Broadcasts</div>
+      <div id="public-list-wrap">
+        <div id="public-list-empty" style="font-size:.83rem;color:var(--muted);font-style:italic">No public broadcasts right now.</div>
+        <div id="public-list" style="display:flex;flex-direction:column;gap:.5rem"></div>
+      </div>
+      <button class="quick-btn" style="margin-top:.75rem" onclick="refreshPublicList()">↻ Refresh</button>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Enter Session Code</div>
+      <div class="code-input-wrap">
+        <input type="text" class="code-input" id="viewer-code-input" maxlength="6" placeholder="000000"
+          oninput="this.value=this.value.replace(/\D/g,'')"
+          onkeydown="if(event.key==='Enter')joinSession()">
+        <button class="btn primary" onclick="joinSession()">Connect</button>
+        <button class="btn danger" id="btn-disconnect" onclick="leaveSession()" style="display:none">Disconnect</button>
+      </div>
+      <div id="viewer-password-wrap" style="margin-top:.75rem;display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">
+        <div style="position:relative;flex:1;max-width:280px">
+          <input type="password" class="url-input" id="viewer-password" placeholder="Password (if required)"
+            style="width:100%;padding-right:2.5rem"
+            onkeydown="if(event.key==='Enter')joinSession()">
+          <button onclick="togglePasswordVis('viewer-password',this)" style="position:absolute;right:.6rem;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--muted);padding:0;font-size:.8rem">👁</button>
+        </div>
+        <div id="viewer-password-hint" style="font-size:.75rem;color:var(--muted);display:none">
+          🔒 This session requires a password
+        </div>
+      </div>
+      <div style="margin-top:.85rem" class="row">
+        <div class="status idle" id="viewer-status"><span class="status-dot"></span> Not connected</div>
+      </div>
+      <div class="connection-info" id="viewer-conn-info"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Remote Screen</div>
+      <div class="screen-wrap" id="viewer-screen-wrap">
+        <div class="screen-placeholder" id="viewer-placeholder">
+          <svg width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+          <p>Connect to see the remote screen</p>
+        </div>
+        <video id="viewer-video" autoplay playsinline style="display:none"></video>
+        <div class="screen-controls">
+          <button class="screen-ctrl-btn" onclick="toggleFullscreen('viewer-screen-wrap', this)">
+            <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/></svg>
+            Fullscreen
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" id="input-controls-card">
+      <div class="card-title">Mouse &amp; Keyboard Control</div>
+      <div class="row" style="margin-bottom:.85rem">
+        <div class="status idle" id="input-ext-status"><span class="status-dot"></span> Extension not detected on host</div>
+      </div>
+
+      <div class="input-mode-row">
+        <span class="open-mode-label">Input Mode:</span>
+        <div class="open-mode-toggle">
+          <button class="open-mode-btn active" id="input-mode-off" onclick="setInputMode('off')">Off</button>
+          <button class="open-mode-btn" id="input-mode-mouse" onclick="setInputMode('mouse')">Mouse</button>
+          <button class="open-mode-btn" id="input-mode-both" onclick="setInputMode('both')">Mouse + Keys</button>
+        </div>
+      </div>
+
+      <div id="input-active-wrap" style="display:none;margin-top:.85rem;flex-direction:column;gap:.65rem">
+        <div class="info-box" style="font-size:.78rem;padding:.65rem .9rem">
+          <strong>Click on the screen preview above</strong> to send clicks to the host. Scroll to scroll. When "Mouse + Keys" is active, keyboard input is also forwarded.
+        </div>
+        <div class="row" style="gap:.5rem;flex-wrap:wrap">
+          <button class="quick-btn" onclick="sendKey('Enter')">↵ Enter</button>
+          <button class="quick-btn" onclick="sendKey('Escape')">Esc</button>
+          <button class="quick-btn" onclick="sendKey('Backspace')">⌫ Backspace</button>
+          <button class="quick-btn" onclick="sendKey('ArrowUp')">↑</button>
+          <button class="quick-btn" onclick="sendKey('ArrowDown')">↓</button>
+          <button class="quick-btn" onclick="sendKey('ArrowLeft')">←</button>
+          <button class="quick-btn" onclick="sendKey('ArrowRight')">→</button>
+          <button class="quick-btn" onclick="sendKey(' ')">Space</button>
+        </div>
+        <div class="url-bar-wrap">
+          <input type="text" class="url-input" id="type-input" placeholder="Type text to send to host…" style="font-size:.85rem">
+          <button class="btn primary" onclick="sendTypeText()">Send</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:.6rem;margin-top:.25rem;flex-wrap:wrap">
+          <button class="quick-btn" id="debug-toggle" onclick="toggleClickDebug()">🎯 Debug clicks: OFF</button>
+          <span style="font-size:.72rem;color:var(--muted)">Red = where you clicked · Cyan = where it mapped</span>
+        </div>
+        <div style="margin-top:.6rem;display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">
+          <span style="font-size:.72rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)">Y Offset Correction:</span>
+          <input type="number" id="cal-offset-y" value="0" step="1"
+            style="width:70px;background:var(--bg);border:1px solid var(--border-bright);border-radius:6px;color:var(--text);padding:.3rem .5rem;font-family:var(--mono);font-size:.82rem;text-align:center"
+            oninput="applyCalibration()">
+          <span style="font-size:.72rem;color:var(--muted)">px (negative = move up, positive = move down)</span>
+          <button class="quick-btn" onclick="fetchHostInfo()">Fetch host info</button>
+        </div>
+        <div id="host-info-readout" style="display:none;margin-top:.4rem;font-size:.75rem;font-family:var(--mono);color:var(--accent2);background:var(--bg);padding:.4rem .6rem;border-radius:6px"></div>
+      </div>
+    </div>
+
+    <div class="card" id="info-panel-card">
+      <div class="card-title">Host Info</div>
+      <div class="info-grid" id="host-info-grid">
+        <div class="info-row"><span class="info-label">Status</span><span class="info-val" id="info-status">—</span></div>
+        <div class="info-row"><span class="info-label">Local Time</span><span class="info-val" id="info-time">—</span></div>
+        <div class="info-row"><span class="info-label">Active Tab</span><span class="info-val info-url" id="info-tab">—</span></div>
+        <div class="info-row"><span class="info-label">Screen</span><span class="info-val" id="info-screen">—</span></div>
+        <div class="info-row"><span class="info-label">Browser</span><span class="info-val" id="info-browser">—</span></div>
+        <div class="info-row"><span class="info-label">Open Tabs</span><span class="info-val" id="info-tabs">—</span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Open URL on Host's Computer</div>
+      <div class="url-bar-wrap">
+        <input type="text" class="url-input" id="url-input" placeholder="https://example.com"
+          onkeydown="if(event.key==='Enter')sendUrl()">
+        <button class="btn primary" onclick="sendUrl()">
+          <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+          Open
+        </button>
+      </div>
+
+      <div class="open-mode-row" style="flex-wrap:wrap;gap:.6rem">
+        <span class="open-mode-label">Mode:</span>
+        <div class="open-mode-toggle">
+          <button class="open-mode-btn active" id="mode-tab" onclick="setOpenMode('tab')">Tab</button>
+          <button class="open-mode-btn" id="mode-popup" onclick="setOpenMode('popup')">Popup</button>
+        </div>
+        <span class="open-mode-label" style="margin-left:.25rem">Window:</span>
+        <div class="open-mode-toggle">
+          <button class="open-mode-btn active" id="win-same" onclick="setWindowTarget('same')">ScreenLink Window</button>
+          <button class="open-mode-btn" id="win-other" onclick="setWindowTarget('other')">Other Window</button>
+        </div>
+      </div>
+
+      <div class="popup-size-row" id="popup-size-row" style="display:none">
+        <div class="size-field">
+          <label class="size-label">Width</label>
+          <input type="number" class="size-input" id="popup-width" value="1024" min="200" max="3840">
+          <span class="size-unit">px</span>
+        </div>
+        <div class="size-field">
+          <label class="size-label">Height</label>
+          <input type="number" class="size-input" id="popup-height" value="768" min="200" max="2160">
+          <span class="size-unit">px</span>
+        </div>
+        <div class="size-field">
+          <label class="size-label">Left</label>
+          <input type="number" class="size-input" id="popup-left" value="0" min="0" max="3840">
+          <span class="size-unit">px</span>
+        </div>
+        <div class="size-field">
+          <label class="size-label">Top</label>
+          <input type="number" class="size-input" id="popup-top" value="0" min="0" max="2160">
+          <span class="size-unit">px</span>
+        </div>
+        <div class="preset-row">
+          <span class="size-label">Presets:</span>
+          <button class="quick-btn" onclick="setPopupPreset(1920,1080,0,0)">Fullscreen</button>
+          <button class="quick-btn" onclick="setPopupPreset(1024,768,100,100)">Large</button>
+          <button class="quick-btn" onclick="setPopupPreset(800,600,200,200)">Medium</button>
+          <button class="quick-btn" onclick="setPopupPreset(480,320,300,300)">Small</button>
+        </div>
+      </div>
+
+      <div class="quick-sites">
+        <button class="quick-btn" onclick="quickOpen('https://google.com')">Google</button>
+        <button class="quick-btn" onclick="quickOpen('https://youtube.com')">YouTube</button>
+        <button class="quick-btn" onclick="quickOpen('https://github.com')">GitHub</button>
+        <button class="quick-btn" onclick="quickOpen('https://wikipedia.org')">Wikipedia</button>
+        <button class="quick-btn" onclick="quickOpen('https://reddit.com')">Reddit</button>
+        <button class="quick-btn" onclick="quickOpen('https://x.com')">X / Twitter</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Open Tabs on Host</div>
+      <div class="tab-list" id="viewer-tab-list">
+        <div class="tab-empty">No tabs opened yet.</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Play Sound on Host</div>
+
+      <div class="sound-drop-zone" id="sound-drop-zone" onclick="document.getElementById('sound-file-input').click()" ondragover="event.preventDefault();this.classList.add('drag-over')" ondragleave="this.classList.remove('drag-over')" ondrop="handleSoundDrop(event)">
+        <svg width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+        <div class="sound-drop-text">Drop audio file or click to browse</div>
+        <div class="sound-drop-sub">MP3, WAV, OGG, M4A — max 7MB</div>
+      </div>
+      <input type="file" id="sound-file-input" accept="audio/*" style="display:none" onchange="handleSoundFile(this.files[0])">
+
+      <div class="sound-loaded" id="sound-loaded" style="display:none">
+        <div class="sound-info">
+          <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+          <span id="sound-filename">—</span>
+          <span id="sound-filesize" style="color:var(--muted);font-size:.75rem"></span>
+        </div>
+        <div class="sound-controls">
+          <div class="sound-vol-row">
+            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/></svg>
+            <input type="range" class="vol-slider" id="sound-volume" min="0" max="1" step="0.05" value="1">
+            <span class="vol-label" id="sound-vol-label">100%</span>
+          </div>
+          <div class="row" style="gap:.5rem;flex-wrap:wrap">
+            <button class="btn primary" id="sound-play-btn" onclick="playSound()">
+              <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              Play on Host
+            </button>
+            <button class="btn danger" id="sound-stop-btn" onclick="stopSound()" style="display:none">
+              <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+              Stop
+            </button>
+            <button class="btn" onclick="clearSound()">Clear</button>
+          </div>
+
+          <!-- Progress bar (shown while playing) -->
+          <div class="sound-progress-wrap" id="sound-progress-wrap" style="display:none">
+            <div class="sound-progress-track">
+              <div class="sound-progress-bar" id="sound-progress-bar"></div>
+            </div>
+            <div class="sound-progress-labels">
+              <span id="sound-time-current">0:00</span>
+              <span id="sound-time-total">0:00</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="sound-status" id="sound-status" style="display:none;margin-top:.75rem"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Send File to Host</div>
+
+      <div class="sound-drop-zone" id="file-drop-zone"
+        onclick="document.getElementById('file-input').click()"
+        ondragover="event.preventDefault();this.classList.add('drag-over')"
+        ondragleave="this.classList.remove('drag-over')"
+        ondrop="handleFileDrop(event)">
+        <svg width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        <div class="sound-drop-text">Drop any file or click to browse</div>
+        <div class="sound-drop-sub">Max 50MB — downloads automatically on host</div>
+      </div>
+      <input type="file" id="file-input" style="display:none" onchange="handleFileSelect(this.files[0])">
+
+      <div class="sound-loaded" id="file-loaded" style="display:none">
+        <div class="sound-info">
+          <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M13 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
+          <span id="file-name">—</span>
+          <span id="file-size" style="color:var(--muted);font-size:.75rem"></span>
+        </div>
+
+        <div class="sound-progress-wrap" id="file-progress-wrap" style="display:none">
+          <div class="sound-progress-track">
+            <div class="sound-progress-bar" id="file-progress-bar"></div>
+          </div>
+          <div class="sound-progress-labels">
+            <span id="file-progress-label">Sending…</span>
+            <span id="file-progress-pct">0%</span>
+          </div>
+        </div>
+
+        <div class="row" style="gap:.5rem;flex-wrap:wrap;margin-top:.25rem">
+          <button class="btn primary" id="file-send-btn" onclick="sendFile()">
+            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            Send to Host
+          </button>
+          <button class="btn" onclick="clearFile()">Clear</button>
+        </div>
+      </div>
+
+      <div id="file-transfers" style="margin-top:.75rem;display:flex;flex-direction:column;gap:.4rem"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Session Recording</div>
+
+      <div class="row" style="gap:.6rem;flex-wrap:wrap">
+        <div class="status idle" id="rec-status"><span class="status-dot"></span> Not recording</div>
+        <span class="spacer"></span>
+        <button class="btn primary" id="rec-start-btn" onclick="startRecording()">
+          <svg width="12" height="12" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/></svg>
+          Record
+        </button>
+        <button class="btn danger" id="rec-stop-btn" onclick="stopRecording()" style="display:none">
+          <svg width="12" height="12" fill="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+          Stop
+        </button>
+      </div>
+
+      <div id="rec-timer" style="display:none;margin-top:.6rem;font-family:var(--mono);font-size:1.1rem;color:var(--danger);letter-spacing:.1em">
+        ⏺ <span id="rec-time">00:00</span>
+      </div>
+
+      <div id="rec-downloads" style="margin-top:.75rem;display:flex;flex-direction:column;gap:.4rem"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Command History</div>
+      <div class="cmd-log" id="viewer-log">
+        <div style="color:var(--muted)">No commands sent yet.</div>
+      </div>
+    </div>
+
+  </div>
+
+</main>
+<div id="toast"></div>
+
+<script>
+// ─────────────────────────────────────────────────────
+// SOCKET + STATE
+// ─────────────────────────────────────────────────────
+const socket = io({
+  transports: ['websocket', 'polling'],
+  reconnection: true,
+  reconnectionAttempts: Infinity,
+  reconnectionDelay: 1000,
+  reconnectionDelayMax: 5000,
+  timeout: 20000,
+});
+
+const CODE_DURATION = 5 * 60;
+let hostStream = null;
+let timerInterval = null;
+let codeExpiry = null;
+let currentCode = null;
+let isHosting = false;
+
+// WebRTC state
+let peerConnections = {};
+let viewerPc = null;
+
+// Open mode: 'tab' or 'popup'
+let openMode = 'tab';
+// Window target: 'same' (ScreenLink window) or 'other' (any other window via extension)
+let windowTarget = 'same';
+
+function setWindowTarget(target) {
+  windowTarget = target;
+  document.getElementById('win-same').classList.toggle('active', target === 'same');
+  document.getElementById('win-other').classList.toggle('active', target === 'other');
+  if (target === 'other' && !extConnected) {
+    toast('Requires the ScreenLink Controller extension on the host.');
+  }
+}
+
+// Tab tracking: tabId -> { win, url } (host side)
+let openedTabs = {};
+// Tab list for viewer: tabId -> url
+let viewerTabs = {};
+
+const ICE_SERVERS = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+  ]
+};
+
+// ─────────────────────────────────────────────────────
+// MODE
+// ─────────────────────────────────────────────────────
+function setMode(mode) {
+  document.getElementById('btn-host').classList.toggle('active', mode === 'host');
+  document.getElementById('btn-viewer').classList.toggle('active', mode === 'viewer');
+  document.getElementById('host-panel').classList.toggle('active', mode === 'host');
+  document.getElementById('viewer-panel').classList.toggle('active', mode === 'viewer');
+  if (mode === 'viewer') refreshPublicList();
+}
+
+// ─────────────────────────────────────────────────────
+// TIMER
+// ─────────────────────────────────────────────────────
+function startTimer() {
+  codeExpiry = Date.now() + CODE_DURATION * 1000;
+  if (timerInterval) clearInterval(timerInterval);
+  timerInterval = setInterval(() => {
+    // If viewers are connected, freeze the timer and show locked state
+    const hasViewers = Object.values(peerConnections).some(pc =>
+      pc.connectionState === 'connected' || pc.connectionState === 'connecting'
+    );
+    if (hasViewers) {
+      document.getElementById('timer-label').textContent = 'locked';
+      document.getElementById('timer-bar').style.width = '100%';
+      document.getElementById('timer-bar').style.background = 'linear-gradient(90deg,var(--accent),var(--accent2))';
+      // Still ask server to extend — it will keep the same code
+      if (codeExpiry - Date.now() < 30000) {
+        socket.emit('host:refresh');
+        codeExpiry = Date.now() + CODE_DURATION * 1000;
+      }
+      return;
+    }
+    const remaining = Math.max(0, Math.ceil((codeExpiry - Date.now()) / 1000));
+    const m = Math.floor(remaining / 60);
+    const s = remaining % 60;
+    document.getElementById('timer-label').textContent = `${m}:${String(s).padStart(2,'0')}`;
+    const pct = (remaining / CODE_DURATION) * 100;
+    const bar = document.getElementById('timer-bar');
+    bar.style.width = pct + '%';
+    bar.style.background = pct < 20 ? 'var(--danger)' : 'linear-gradient(90deg,var(--accent),var(--accent2))';
+    if (remaining === 0 && isHosting) socket.emit('host:refresh');
+  }, 1000);
+}
+
+// ─────────────────────────────────────────────────────
+// HOST — SCREEN SHARE
+// ─────────────────────────────────────────────────────
+async function startShare() {
+  try {
+    const stream = await navigator.mediaDevices.getDisplayMedia({
+      video: { cursor: 'always', frameRate: 15 },
+      audio: false,
+    });
+    hostStream = stream;
+    isHosting = true;
+
+    const vid = document.getElementById('host-video');
+    vid.srcObject = stream;
+    vid.style.display = 'block';
+    document.getElementById('host-placeholder').style.display = 'none';
+    document.getElementById('btn-share').style.display = 'none';
+    document.getElementById('btn-stop').style.display = 'inline-flex';
+
+    stream.getVideoTracks()[0].addEventListener('ended', stopShare);
+
+    // Hash password before sending (never send plaintext)
+    const pwInput = document.getElementById('host-password');
+    const pw = pwInput ? pwInput.value.trim() : '';
+    const passwordHash = await hashPassword(pw);
+    if (pwInput) pwInput.dataset.lastHash = passwordHash || '';
+
+    socket.emit('host:create', { passwordHash });
+
+    // Show password status badge and lock the field
+    if (pwInput) pwInput.disabled = true;
+    const pwStatus = document.getElementById('host-password-status');
+    const pwLabel = document.getElementById('host-password-label');
+    if (pwStatus && pwLabel) {
+      pwStatus.style.display = 'inline-flex';
+      if (pw) {
+        pwStatus.className = 'status live';
+        pwLabel.textContent = 'Password set';
+      } else {
+        pwStatus.className = 'status idle';
+        pwLabel.textContent = 'No password';
+      }
+    }
+
+    _hostWasSharing = true;
+    setHostStatus('waiting');
+    startInfoBroadcast();
+    startSilentAudio();
+    setTimeout(checkExtension, 1000);
+    persistState();
+    toast('Screen sharing started! Waiting for a viewer…');
+  } catch(err) {
+    if (err.name !== 'NotAllowedError') toast('Could not start screen share: ' + err.message);
+  }
+}
+
+function stopShare() {
+  isHosting = false;
+  if (hostStream) { hostStream.getTracks().forEach(t => t.stop()); hostStream = null; }
+  Object.values(peerConnections).forEach(pc => pc.close());
+  peerConnections = {};
+  openedTabs = {};
+  stopInfoBroadcast();
+  if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+
+  // Reset password field
+  _hostWasSharing = false;
+  _isPublic = false;
+  stopSilentAudio();
+  document.getElementById('pub-off-btn').classList.add('active');
+  document.getElementById('pub-on-btn').classList.remove('active');
+  // Tell server to remove from public list
+  if (socket.connected) socket.emit('host:set-public', { isPublic: false, label: '' });
+  clearSessionState();
+  const pwInput = document.getElementById('host-password');
+  if (pwInput) { pwInput.disabled = false; pwInput.value = ''; }
+  const pwStatus = document.getElementById('host-password-status');
+  if (pwStatus) pwStatus.style.display = 'none';
+
+  const vid = document.getElementById('host-video');
+  vid.srcObject = null; vid.style.display = 'none';
+  document.getElementById('host-placeholder').style.display = 'flex';
+  document.getElementById('host-code').textContent = '——————';
+  document.getElementById('timer-label').textContent = '5:00';
+  document.getElementById('timer-bar').style.width = '100%';
+  document.getElementById('viewer-count-label').textContent = '';
+  document.getElementById('host-conn-info').textContent = '';
+  setHostStatus('idle');
+  document.getElementById('btn-share').style.display = 'inline-flex';
+  document.getElementById('btn-stop').style.display = 'none';
+  toast('Screen sharing stopped.');
+}
+
+// ─────────────────────────────────────────────────────
+// HOST — WebRTC offer
+// ─────────────────────────────────────────────────────
+async function createOffer(viewerId) {
+  const pc = new RTCPeerConnection(ICE_SERVERS);
+  peerConnections[viewerId] = pc;
+
+  if (hostStream) hostStream.getTracks().forEach(track => pc.addTrack(track, hostStream));
+
+  pc.onicecandidate = ({ candidate }) => {
+    if (candidate) socket.emit('rtc:ice', { to: viewerId, candidate });
+  };
+
+  pc.onconnectionstatechange = () => {
+    const count = Object.values(peerConnections).filter(p => p.connectionState === 'connected').length;
+    document.getElementById('viewer-count-label').textContent = count ? `${count} viewer(s)` : '';
+    if (pc.connectionState === 'connected') {
+      setHostStatus('live');
+      document.getElementById('host-conn-info').textContent = 'WebRTC connected — peer-to-peer stream active';
+    }
+  };
+
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+  socket.emit('rtc:offer', { to: viewerId, offer });
+}
+
+// ─────────────────────────────────────────────────────
+// VIEWER — JOIN
+// ─────────────────────────────────────────────────────
+function joinSession() {
+  const code = document.getElementById('viewer-code-input').value.trim();
+  if (!/^\d{6}$/.test(code)) {
+    const inp = document.getElementById('viewer-code-input');
+    inp.classList.add('error');
+    setTimeout(() => inp.classList.remove('error'), 500);
+    toast('Enter a valid 6-digit code.');
+    return;
+  }
+  setViewerStatus('waiting');
+  const vpw = (document.getElementById('viewer-password') || {}).value || '';
+  hashPassword(vpw).then(passwordHash => {
+    _viewerConnectedCode = code;
+    _viewerConnectedPwHash = passwordHash;
+    socket.emit('viewer:join', { code, passwordHash });
+    persistState();
+    logViewer('Connecting to session ' + code + '…');
+  });
+}
+
+function leaveSession() {
+  if (viewerPc) { viewerPc.close(); viewerPc = null; }
+  const vid = document.getElementById('viewer-video');
+  vid.srcObject = null; vid.style.display = 'none';
+  document.getElementById('viewer-placeholder').style.display = 'flex';
+  document.getElementById('btn-disconnect').style.display = 'none';
+  document.getElementById('viewer-conn-info').textContent = '';
+  _viewerConnectedCode = null;
+  _viewerConnectedPwHash = null;
+  stopSilentAudio();
+  clearSessionState();
+  viewerTabs = {};
+  renderViewerTabs();
+  clearInfoPanel();
+  setViewerStatus('idle');
+  const vpw = document.getElementById('viewer-password');
+  if (vpw) vpw.value = '';
+  const hint = document.getElementById('viewer-password-hint');
+  if (hint) hint.style.display = 'none';
+  logViewer('Disconnected.');
+  toast('Disconnected.');
+}
+
+// ─────────────────────────────────────────────────────
+// VIEWER — WebRTC answer
+// ─────────────────────────────────────────────────────
+async function handleOffer(hostId, offer) {
+  if (viewerPc) viewerPc.close();
+  const pc = new RTCPeerConnection(ICE_SERVERS);
+  viewerPc = pc;
+
+  pc.onicecandidate = ({ candidate }) => {
+    if (candidate) socket.emit('rtc:ice', { to: hostId, candidate });
+  };
+
+  pc.ontrack = (e) => {
+    const vid = document.getElementById('viewer-video');
+    vid.srcObject = e.streams[0];
+    vid.style.display = 'block';
+    document.getElementById('viewer-placeholder').style.display = 'none';
+    setViewerStatus('live');
+    toast('Connected! Watching remote screen.');
+    logViewer('Stream connected — peer-to-peer WebRTC active.');
+    document.getElementById('viewer-conn-info').textContent = 'WebRTC P2P stream active';
+    socket.emit('viewer:stream-ack');
+  };
+
+  pc.onconnectionstatechange = () => {
+    if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
+      setViewerStatus('idle');
+      toast('Connection lost.');
+    }
+  };
+
+  await pc.setRemoteDescription(new RTCSessionDescription(offer));
+  const answer = await pc.createAnswer();
+  await pc.setLocalDescription(answer);
+  socket.emit('rtc:answer', { to: hostId, answer });
+  document.getElementById('btn-disconnect').style.display = 'inline-flex';
+}
+
+// ─────────────────────────────────────────────────────
+// VIEWER — SEND URL / CLOSE TAB
+// ─────────────────────────────────────────────────────
+function setOpenMode(mode) {
+  openMode = mode;
+  document.getElementById('mode-tab').classList.toggle('active', mode === 'tab');
+  document.getElementById('mode-popup').classList.toggle('active', mode === 'popup');
+  document.getElementById('popup-size-row').style.display = mode === 'popup' ? 'flex' : 'none';
+}
+
+function setPopupPreset(w, h, left, top) {
+  document.getElementById('popup-width').value = w;
+  document.getElementById('popup-height').value = h;
+  document.getElementById('popup-left').value = left;
+  document.getElementById('popup-top').value = top;
+}
+
+function sendUrl() {
+  const raw = document.getElementById('url-input').value.trim();
+  if (!raw) return;
+  let url = raw;
+  if (!url.startsWith('http://') && !url.startsWith('https://')) url = 'https://' + url;
+
+  const payload = { url, mode: openMode, windowTarget };
+  if (openMode === 'popup') {
+    payload.width  = parseInt(document.getElementById('popup-width').value)  || 1024;
+    payload.height = parseInt(document.getElementById('popup-height').value) || 768;
+    payload.left   = parseInt(document.getElementById('popup-left').value)   || 0;
+    payload.top    = parseInt(document.getElementById('popup-top').value)    || 0;
+  }
+
+  socket.emit('cmd:open-url', payload);
+  logViewer('Sent: open ' + url + (openMode === 'popup' ? ' (popup)' : ' (tab)'));
+  document.getElementById('url-input').value = '';
+  toast('Command sent!');
+}
+
+function quickOpen(url) {
+  document.getElementById('url-input').value = url;
+  sendUrl();
+}
+
+function closeTab(tabId) {
+  socket.emit('cmd:close-tab', { tabId });
+  logViewer('Sent: close tab ' + tabId);
+  toast('Close command sent.');
+}
+
+// ─────────────────────────────────────────────────────
+// VIEWER — TAB LIST UI
+// ─────────────────────────────────────────────────────
+function renderViewerTabs() {
+  const list = document.getElementById('viewer-tab-list');
+  const ids = Object.keys(viewerTabs);
+  if (!ids.length) {
+    list.innerHTML = '<div class="tab-empty">No tabs opened yet.</div>';
+    return;
+  }
+  list.innerHTML = '';
+  ids.forEach(tabId => {
+    const { url, mode } = viewerTabs[tabId];
+    let display = url;
+    try { display = new URL(url).hostname; } catch(e) {}
+    const favicon = `https://www.google.com/s2/favicons?domain=${encodeURIComponent(url)}&sz=16`;
+    const modeBadge = mode === 'popup'
+      ? `<span style="font-size:.68rem;padding:.15rem .4rem;border-radius:4px;background:rgba(108,99,255,.2);color:var(--accent);font-family:var(--mono)">popup</span>`
+      : `<span style="font-size:.68rem;padding:.15rem .4rem;border-radius:4px;background:rgba(62,207,207,.1);color:var(--accent2);font-family:var(--mono)">tab</span>`;
+    const item = document.createElement('div');
+    item.className = 'tab-item';
+    item.dataset.tabid = tabId;
+    item.innerHTML = `
+      <img class="tab-favicon" src="${favicon}" alt="" onerror="this.style.display='none'">
+      ${modeBadge}
+      <span class="tab-url" title="${esc(url)}">${esc(display)}</span>
+      <button class="tab-close" onclick="closeTab('${esc(tabId)}')">✕ Close</button>
+    `;
+    list.appendChild(item);
+  });
+}
+
+// ─────────────────────────────────────────────────────
+// SOCKET EVENTS
+// ─────────────────────────────────────────────────────
+// ── Connection state tracking ──
+let _viewerConnectedCode = null;
+let _viewerConnectedPwHash = null;
+let _hostWasSharing = false;
+let keepaliveInterval = null;
+let reconnectToast = null;
+
+socket.on('connect', () => {
+  document.getElementById('host-conn-info').textContent = '';
+  startKeepalive();
+  hideReconnectBanner();
+  restoreSession();
+});
+
+socket.on('disconnect', (reason) => {
+  stopKeepalive();
+  showReconnectBanner('Disconnected: ' + reason + '. Reconnecting…');
+  logHost && logHost('Socket disconnected: ' + reason);
+  logViewer && logViewer('Socket disconnected: ' + reason);
+});
+
+socket.on('connect_error', (err) => {
+  showReconnectBanner('Connection error — retrying…');
+});
+
+// ─────────────────────────────────────────────────────
+// SESSION PERSISTENCE (survive sleep/lid close)
+// ─────────────────────────────────────────────────────
+const SESSION_KEY = 'screenlink_session';
+
+function saveSessionState() {
+  var pwInput = document.getElementById('host-password');
+  const state = {
+    role: null,
+    // Host state
+    hostWasSharing: _hostWasSharing,
+    hostIsPublic: _isPublic,
+    hostPublicLabel: document.getElementById('pub-label') ? document.getElementById('pub-label').value.trim() : '',
+    savedPwHash: pwInput ? pwInput.dataset.lastHash || null : null,
+    // Viewer state
+    viewerCode: _viewerConnectedCode,
+    viewerPwHash: _viewerConnectedPwHash,
+    savedAt: Date.now(),
+  };
+  if (_hostWasSharing) state.role = 'host';
+  else if (_viewerConnectedCode) state.role = 'viewer';
+  if (state.role) {
+    try { localStorage.setItem(SESSION_KEY, JSON.stringify(state)); } catch(e) {}
+  }
+}
+
+function clearSessionState() {
+  try { localStorage.removeItem(SESSION_KEY); } catch(e) {}
+}
+
+function loadSessionState() {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    if (!raw) return null;
+    const state = JSON.parse(raw);
+    // Don't restore sessions older than 30 minutes
+    if (Date.now() - state.savedAt > 30 * 60 * 1000) {
+      clearSessionState();
+      return null;
+    }
+    return state;
+  } catch(e) { return null; }
+}
+
+let _viewerRetryInterval = null;
+let _viewerRetryCount = 0;
+const VIEWER_MAX_RETRIES = 40;
+
+function stopViewerRetry() {
+  if (_viewerRetryInterval) { clearInterval(_viewerRetryInterval); _viewerRetryInterval = null; }
+  _viewerRetryCount = 0;
+}
+
+function startViewerRetry(code, passwordHash) {
+  stopViewerRetry();
+  _viewerRetryCount = 0;
+  function attempt() {
+    if (!socket.connected) return;
+    _viewerRetryCount++;
+    var elapsed = _viewerRetryCount * 3;
+    showReconnectBanner('Waiting for host to come back... (' + elapsed + 's elapsed)');
+    socket.emit('viewer:join', { code: code, passwordHash: passwordHash });
+    if (_viewerRetryCount >= VIEWER_MAX_RETRIES) {
+      stopViewerRetry();
+      showReconnectBanner('Could not reconnect after 2 minutes. Try entering the code manually.');
+      setTimeout(hideReconnectBanner, 6000);
+    }
+  }
+  attempt();
+  _viewerRetryInterval = setInterval(attempt, 3000);
+}
+
+// Stop retrying once viewer successfully joins
+socket.on('viewer:ok', function() {
+  stopViewerRetry();
+  hideReconnectBanner();
+  startSilentAudio();
+  setViewerStatus('connected-no-stream');
+  toast('Reconnected to session!');
+  logViewer('Session restored after reconnect.');
+});
+
+function restoreSession() {
+  // Case 1: Host stream alive in tab - just re-register with server
+  if (_hostWasSharing && isHosting) {
+    var pwInput = document.getElementById('host-password');
+    var pw = pwInput && !pwInput.disabled ? pwInput.value.trim() : '';
+    hashPassword(pw).then(function(passwordHash) {
+      socket.emit('host:create', { passwordHash: passwordHash });
+      if (_isPublic) {
+        var lbl = document.getElementById('pub-label');
+        var label = (lbl ? lbl.value.trim() : '') || 'Anonymous';
+        setTimeout(function() { socket.emit('host:set-public', { isPublic: true, label: label }); }, 500);
+      }
+      logHost('Socket reconnected — session re-registered');
+      hideReconnectBanner();
+      toast('Reconnected!');
+    });
+    return;
+  }
+
+  // Case 2: Viewer socket dropped but code is known - retry
+  if (_viewerConnectedCode) {
+    showReconnectBanner('Reconnecting to session ' + _viewerConnectedCode + '...');
+    startViewerRetry(_viewerConnectedCode, _viewerConnectedPwHash);
+    return;
+  }
+
+  // Case 3: Restore from localStorage after sleep or page reload
+  var state = loadSessionState();
+  if (!state) return;
+
+  if (state.role === 'host') {
+    if (state.hostIsPublic) {
+      _isPublic = true;
+      var offBtn = document.getElementById('pub-off-btn');
+      var onBtn = document.getElementById('pub-on-btn');
+      if (offBtn) offBtn.classList.remove('active');
+      if (onBtn) onBtn.classList.add('active');
+      var labelEl = document.getElementById('pub-label');
+      if (labelEl && state.hostPublicLabel) labelEl.value = state.hostPublicLabel;
+    }
+    var ageMin = Math.round((Date.now() - state.savedAt) / 60000);
+    // Just reconnect for commands — don't touch screen share
+    hideReconnectBanner();
+    // Re-register as host so commands work immediately
+    var savedPwHash = state.savedPwHash || null;
+    socket.emit('host:create', { passwordHash: savedPwHash });
+    if (state.hostIsPublic) {
+      var lbl2 = state.hostPublicLabel || 'Anonymous';
+      setTimeout(function() { socket.emit('host:set-public', { isPublic: true, label: lbl2 }); }, 500);
+    }
+    _hostWasSharing = true;
+    isHosting = true;
+    setHostStatus('waiting');
+    startInfoBroadcast();
+    setTimeout(checkExtension, 500);
+    // Show stop button, hide share button
+    document.getElementById('btn-share').style.display = 'none';
+    document.getElementById('btn-stop').style.display = 'inline-flex';
+    startSilentAudio();
+    logHost('Reconnected after sleep — commands ready (screen share not active)');
+    toast('Reconnected! Commands ready.');
+
+  } else if (state.role === 'viewer' && state.viewerCode) {
+    _viewerConnectedCode = state.viewerCode;
+    _viewerConnectedPwHash = state.viewerPwHash;
+    var inp = document.getElementById('viewer-code-input');
+    if (inp) inp.value = state.viewerCode;
+    setMode('viewer');
+    setViewerStatus('waiting');
+    showReconnectBanner('Waiting for host to wake up and reconnect...');
+    startViewerRetry(state.viewerCode, state.viewerPwHash);
+  }
+}
+
+// Save state whenever something important changes
+function persistState() {
+  saveSessionState();
+}
+
+function startKeepalive() {
+  stopKeepalive();
+  // Ping every 15s to prevent idle drop
+  keepaliveInterval = setInterval(() => {
+    if (socket.connected) socket.emit('ping');
+  }, 15000);
+}
+
+function stopKeepalive() {
+  if (keepaliveInterval) { clearInterval(keepaliveInterval); keepaliveInterval = null; }
+}
+
+function showReconnectBanner(msg) {
+  let el = document.getElementById('reconnect-banner');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'reconnect-banner';
+    el.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:var(--danger);color:#fff;text-align:center;padding:.6rem 1rem;font-size:.85rem;font-family:var(--sans);display:flex;align-items:center;justify-content:center;gap:.75rem';
+    el.innerHTML = '<span id="reconnect-msg"></span><span style="opacity:.7;font-size:.75rem">Auto-reconnecting…</span>';
+    document.body.prepend(el);
+  }
+  document.getElementById('reconnect-msg').textContent = msg;
+  el.style.display = 'flex';
+}
+
+function hideReconnectBanner() {
+  const el = document.getElementById('reconnect-banner');
+  if (el) el.style.display = 'none';
+}
+
+socket.on('host:code', ({ code }) => {
+  currentCode = code;
+  document.getElementById('host-code').textContent = code;
+  startTimer();
+});
+
+let _commandViewers = new Set(); // viewers connected for commands (may not have WebRTC)
+
+socket.on('viewer:joined', ({ viewerId }) => {
+  _commandViewers.add(viewerId);
+  updateViewerCountLabel();
+  logHost('Viewer connected, initiating stream…');
+  createOffer(viewerId);
+});
+
+socket.on('viewer:left', ({ viewerId }) => {
+  _commandViewers.delete(viewerId);
+  if (peerConnections[viewerId]) { peerConnections[viewerId].close(); delete peerConnections[viewerId]; }
+  logHost('Viewer disconnected.');
+  updateViewerCountLabel();
+  if (!_commandViewers.size) setHostStatus('waiting');
+});
+
+function updateViewerCountLabel() {
+  const total = _commandViewers.size;
+  const streaming = Object.values(peerConnections).filter(p => p.connectionState === 'connected').length;
+  const el = document.getElementById('viewer-count-label');
+  if (!el) return;
+  if (!total) { el.textContent = ''; return; }
+  if (streaming > 0 && streaming < total) {
+    el.textContent = total + ' viewer(s) (' + streaming + ' watching)';
+  } else if (streaming === total && total > 0) {
+    el.textContent = total + ' viewer(s) watching';
+  } else {
+    el.textContent = total + ' viewer(s) — commands only';
+  }
+  setHostStatus('live');
+}
+
+socket.on('viewer:ok', () => {
+  setViewerStatus('connected-no-stream');
+  startSilentAudio();
+  logViewer('Session found, establishing WebRTC…');
+});
+
+socket.on('viewer:error', ({ message, wrongPassword }) => {
+  setViewerStatus('idle');
+  toast('Error: ' + message);
+  logViewer('Error: ' + message);
+  if (wrongPassword) {
+    const pwInp = document.getElementById('viewer-password');
+    if (pwInp) {
+      pwInp.classList.add('error');
+      setTimeout(() => pwInp.classList.remove('error'), 500);
+      pwInp.value = '';
+      pwInp.focus();
+    }
+    // Show the password hint
+    const hint = document.getElementById('viewer-password-hint');
+    if (hint) hint.style.display = 'block';
+  }
+});
+
+// When host:code tells us the session has a password, show hint
+socket.on('host:code', ({ code, hasPassword }) => {
+  // viewer side — if we get a code broadcast (won't happen normally, but handle gracefully)
+});
+
+socket.on('rtc:offer', async ({ from, offer }) => { await handleOffer(from, offer); });
+
+socket.on('rtc:answer', async ({ from, answer }) => {
+  const pc = peerConnections[from];
+  if (pc) await pc.setRemoteDescription(new RTCSessionDescription(answer));
+});
+
+// Viewer sends ack when stream arrives — update count label
+socket.on('viewer:stream-ack', () => {
+  updateViewerCountLabel();
+});
+
+socket.on('rtc:ice', async ({ from, candidate }) => {
+  const pc = peerConnections[from] || viewerPc;
+  if (pc && candidate) { try { await pc.addIceCandidate(new RTCIceCandidate(candidate)); } catch(e) {} }
+});
+
+// Pending popup queue (needs user gesture to open)
+let pendingPopups = [];
+
+function openPendingPopup(tabId, url, width, height, left, top) {
+  const features = [
+    'width='  + (width  || 1024),
+    'height=' + (height || 768),
+    'left='   + (left   || 0),
+    'top='    + (top    || 0),
+    'menubar=no',
+    'toolbar=no',
+    'location=yes',
+    'status=no',
+    'scrollbars=yes',
+    'resizable=yes',
+  ].join(',');
+  const win = window.open(url, tabId, features);
+  openedTabs[tabId] = { win, url, mode: 'popup' };
+  socket.emit('host:tab-opened', { tabId, url, mode: 'popup' });
+  logHost('Opened popup: ' + url + ' (' + (width||1024) + 'x' + (height||768) + ')');
+  // Remove the notification
+  const el = document.getElementById('popup-prompt-' + tabId);
+  if (el) el.remove();
+  updatePopupPromptContainer();
+}
+
+function updatePopupPromptContainer() {
+  const container = document.getElementById('popup-prompt-container');
+  if (container) container.style.display = pendingPopups.length ? 'flex' : 'none';
+}
+
+// Host receives open-url command from viewer
+socket.on('cmd:open-url', ({ url, mode, width, height, left, top, windowTarget }) => {
+  // If targeting another window and extension is available, use it
+  if (windowTarget === 'other' && detectedExtId) {
+    const tabId = 'tab_' + Date.now() + '_' + Math.random().toString(36).slice(2,6);
+    if (mode === 'popup') {
+      chrome.runtime.sendMessage(detectedExtId, {
+        type: 'SCREENLINK_CMD',
+        cmd: { action: 'open-popup-any-window', url, width: width||1024, height: height||768, left: left||0, top: top||0 }
+      }, () => {
+        openedTabs[tabId] = { win: null, url, mode: 'popup' };
+        socket.emit('host:tab-opened', { tabId, url, mode: 'popup' });
+        logHost('Opened popup in other window: ' + url);
+        toast('Opened in other window: ' + url);
+      });
+    } else {
+      chrome.runtime.sendMessage(detectedExtId, {
+        type: 'SCREENLINK_CMD',
+        cmd: { action: 'open-tab-any-window', url }
+      }, () => {
+        openedTabs[tabId] = { win: null, url, mode: 'tab' };
+        socket.emit('host:tab-opened', { tabId, url, mode: 'tab' });
+        logHost('Opened tab in other window: ' + url);
+        toast('Opened tab in other window: ' + url);
+      });
+    }
+    return;
+  }
+
+  const tabId = 'tab_' + Date.now() + '_' + Math.random().toString(36).slice(2,6);
+
+  if (mode === 'popup') {
+    // Browsers require a real user gesture to open popups with features.
+    // Show a click-to-open prompt on the host side.
+    pendingPopups.push(tabId);
+    const container = document.getElementById('popup-prompt-container');
+    if (container) {
+      let display = url;
+      try { display = new URL(url).hostname; } catch(e) {}
+      const prompt = document.createElement('div');
+      prompt.className = 'popup-prompt';
+      prompt.id = 'popup-prompt-' + tabId;
+      prompt.innerHTML = `
+        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M3 9h6"/></svg>
+        <span>Viewer wants to open <strong>${esc(display)}</strong> as a popup</span>
+        <button class="popup-prompt-btn" onclick="openPendingPopup('${tabId}','${esc(url)}',${width||1024},${height||768},${left||0},${top||0});pendingPopups=pendingPopups.filter(id=>id!=='${tabId}');updatePopupPromptContainer()">Open Popup</button>
+        <button class="popup-prompt-dismiss" onclick="this.closest('.popup-prompt').remove();pendingPopups=pendingPopups.filter(id=>id!=='${tabId}');updatePopupPromptContainer()">✕</button>
+      `;
+      container.appendChild(prompt);
+      container.style.display = 'flex';
+    }
+    logHost('Popup requested: ' + url + ' — click the prompt to open');
+    toast('Popup requested — click the prompt above!');
+  } else {
+    const win = window.open(url, '_blank');
+    openedTabs[tabId] = { win, url, mode: 'tab' };
+    socket.emit('host:tab-opened', { tabId, url, mode: 'tab' });
+    logHost('Opened tab: ' + url);
+    toast('Viewer opened: ' + url);
+  }
+});
+
+// Host receives close-tab command from viewer
+socket.on('cmd:close-tab', ({ tabId }) => {
+  const tab = openedTabs[tabId];
+  if (tab && tab.win && !tab.win.closed) {
+    tab.win.close();
+    delete openedTabs[tabId];
+    socket.emit('host:tab-closed', { tabId });
+    logHost('Closed tab: ' + tab.url);
+    toast('Viewer closed a tab.');
+  } else {
+    // Tab may have been manually closed already
+    delete openedTabs[tabId];
+    socket.emit('host:tab-closed', { tabId });
+  }
+});
+
+// Viewer receives confirmation that host opened a tab
+socket.on('host:tab-opened', ({ tabId, url, mode }) => {
+  viewerTabs[tabId] = { url, mode: mode || 'tab' };
+  renderViewerTabs();
+});
+
+// Viewer receives confirmation that host closed a tab
+socket.on('host:tab-closed', ({ tabId }) => {
+  delete viewerTabs[tabId];
+  renderViewerTabs();
+  logViewer('Tab closed: ' + tabId);
+});
+
+socket.on('host:info', (info) => {
+  const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val || '—'; };
+  set('info-status', info.status);
+  set('info-time', info.time);
+  set('info-tab', info.activeTab);
+  set('info-screen', info.screen);
+  set('info-browser', info.browser);
+  set('info-tabs', info.tabCount === 0 ? 'None open' : info.tabCount + ' ScreenLink tab(s)');
+});
+
+socket.on('host:disconnected', () => {
+  setViewerStatus('idle');
+  toast('Host disconnected.');
+  logViewer('Host ended the session.');
+  const vid = document.getElementById('viewer-video');
+  vid.srcObject = null; vid.style.display = 'none';
+  document.getElementById('viewer-placeholder').style.display = 'flex';
+  document.getElementById('btn-disconnect').style.display = 'none';
+  document.getElementById('viewer-conn-info').textContent = '';
+  viewerTabs = {};
+  renderViewerTabs();
+});
+
+socket.on('session:expired', () => {
+  toast('Session code expired. Ask the host for a new code.');
+  setViewerStatus('idle');
+});
+
+// ─────────────────────────────────────────────────────
+// UI HELPERS
+// ─────────────────────────────────────────────────────
+function applyCalibration() {
+  const offsetY = parseInt(document.getElementById('cal-offset-y').value) || 0;
+  // Send calibration to host via socket — host forwards to extension
+  socket.emit('cmd:input', { action: 'calibrate', offsetX: 0, offsetY });
+  toast('Offset applied: Y=' + offsetY + 'px');
+}
+
+function fetchHostInfo() {
+  // Ask host to query the extension for DPR/scroll info
+  socket.emit('cmd:input', { action: 'get-info' });
+}
+
+function toggleClickDebug() {
+  window._slDebug = !window._slDebug;
+  const btn = document.getElementById('debug-toggle');
+  if (btn) btn.textContent = '🎯 Debug clicks: ' + (window._slDebug ? 'ON' : 'OFF');
+  if (btn) btn.style.borderColor = window._slDebug ? 'var(--accent2)' : '';
+  if (btn) btn.style.color = window._slDebug ? 'var(--accent2)' : '';
+  const readout = document.getElementById('sl-debug-readout');
+  if (readout) readout.style.display = window._slDebug ? 'block' : 'none';
+}
+
+function showDebugReadout(text) {
+  let el = document.getElementById('sl-debug-readout');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'sl-debug-readout';
+    el.style.cssText = 'position:fixed;bottom:1rem;left:1rem;background:rgba(0,0,0,.85);color:#0f0;font:12px monospace;padding:.5rem .75rem;border-radius:8px;z-index:9999;max-width:90vw;word-break:break-all;line-height:1.6;border:1px solid rgba(0,255,0,.3)';
+    document.body.appendChild(el);
+  }
+  el.style.display = 'block';
+  el.innerHTML = text.split(' | ').map(function(s) { return s; }).join('<br>');
+}
+
+function formatFileSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / 1024 / 1024).toFixed(2) + ' MB';
+}
+
+function formatTime(secs) {
+  if (!secs || isNaN(secs)) return '0:00';
+  const m = Math.floor(secs / 60);
+  const s = Math.floor(secs % 60);
+  return m + ':' + String(s).padStart(2, '0');
+}
+
+function clearInfoPanel() {
+  ['info-status','info-time','info-tab','info-screen','info-browser','info-tabs'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = '—';
+  });
+}
+
+function setHostStatus(state) {
+  const el = document.getElementById('host-status');
+  const labels = { idle:'Idle', waiting:'Waiting for viewer', live:'Live' };
+  el.className = 'status ' + state;
+  el.innerHTML = `<span class="status-dot"></span> ${labels[state]}`;
+}
+
+function setViewerStatus(state) {
+  const el = document.getElementById('viewer-status');
+  if (!el) return;
+  const configs = {
+    'idle':                { cls: 'idle',    label: 'Not connected' },
+    'waiting':             { cls: 'waiting', label: 'Connecting…' },
+    'live':                { cls: 'live',    label: 'Connected' },
+    'connected-no-stream': { cls: 'waiting', label: 'Connected — No screen view <span class="status-help" title="The host is connected and commands work, but screen sharing is not active. The host needs to click Share Screen.">?</span>' },
+  };
+  const cfg = configs[state] || { cls: 'idle', label: state };
+  el.className = 'status ' + cfg.cls;
+  el.innerHTML = '<span class="status-dot"></span> ' + cfg.label;
+}
+
+function logHost(text) {
+  const log = document.getElementById('host-log');
+  if (log.firstChild && !log.firstChild.className) log.innerHTML = '';
+  const now = new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  const e = document.createElement('div');
+  e.className = 'cmd-log-entry';
+  e.innerHTML = `<span class="cmd-log-time">${now}</span><span class="cmd-log-text">${esc(text)}</span>`;
+  log.appendChild(e); log.scrollTop = log.scrollHeight;
+}
+
+function logViewer(text) {
+  const log = document.getElementById('viewer-log');
+  if (log.firstChild && !log.firstChild.className) log.innerHTML = '';
+  const now = new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  const e = document.createElement('div');
+  e.className = 'cmd-log-entry';
+  e.innerHTML = `<span class="cmd-log-time">${now}</span><span class="cmd-log-text">${esc(text)}</span>`;
+  log.appendChild(e); log.scrollTop = log.scrollHeight;
+}
+
+let toastTimer = null;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 3200);
+}
+
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ─────────────────────────────────────────────────────
+// SOUND — VIEWER SIDE
+// ─────────────────────────────────────────────────────
+let soundFile = null;
+let soundMime = null;
+
+function handleSoundFile(file) {
+  if (!file) return;
+  if (file.size > 7_500_000) { toast('File too large — max 7MB.'); return; }
+  soundFile = file;
+  soundMime = file.type || 'audio/mpeg';
+  document.getElementById('sound-filename').textContent = file.name;
+  document.getElementById('sound-filesize').textContent = (file.size / 1024 / 1024).toFixed(2) + ' MB';
+  document.getElementById('sound-drop-zone').style.display = 'none';
+  document.getElementById('sound-loaded').style.display = 'flex';
+}
+
+function handleSoundDrop(e) {
+  e.preventDefault();
+  document.getElementById('sound-drop-zone').classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file && file.type.startsWith('audio/')) handleSoundFile(file);
+  else toast('Please drop an audio file.');
+}
+
+async function playSound() {
+  if (!soundFile) { toast('No audio loaded.'); return; }
+  if (!socket.connected || !socket.id) { toast('Not connected to a session.'); return; }
+
+  const vol = parseFloat(document.getElementById('sound-volume').value);
+  const CHUNK_SIZE = 32 * 1024; // 32KB chunks
+
+  // Read file as ArrayBuffer then convert to base64 chunks
+  const arrayBuffer = await soundFile.arrayBuffer();
+  const bytes = new Uint8Array(arrayBuffer);
+  const totalChunks = Math.ceil(bytes.length / CHUNK_SIZE);
+
+  showSoundStatus('Sending audio (' + totalChunks + ' chunks)…');
+  document.getElementById('sound-play-btn').disabled = true;
+
+  // Signal start
+  socket.emit('cmd:sound-start', { mimeType: soundMime, volume: vol, totalChunks });
+
+  // Send chunks with small delay to avoid flooding
+  for (let i = 0; i < totalChunks; i++) {
+    const slice = bytes.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
+    // Convert Uint8Array chunk to base64
+    let binary = '';
+    slice.forEach(b => binary += String.fromCharCode(b));
+    const chunk = btoa(binary);
+    socket.emit('cmd:sound-chunk', { chunk, index: i });
+
+    showSoundStatus('Sending… ' + Math.round(((i+1)/totalChunks)*100) + '%');
+    // Small yield to keep UI responsive
+    if (i % 10 === 0) await new Promise(r => setTimeout(r, 10));
+  }
+
+  socket.emit('cmd:sound-end');
+  document.getElementById('sound-play-btn').style.display = 'none';
+  document.getElementById('sound-play-btn').disabled = false;
+  document.getElementById('sound-stop-btn').style.display = 'inline-flex';
+  showSoundStatus('Playing on host…');
+  logViewer('Sent: play sound (' + soundFile.name + ')');
+  toast('Sound sent to host!');
+}
+
+function stopSound() {
+  socket.emit('cmd:stop-sound');
+  document.getElementById('sound-play-btn').style.display = 'inline-flex';
+  document.getElementById('sound-stop-btn').style.display = 'none';
+  hideSoundStatus();
+  logViewer('Sent: stop sound');
+}
+
+function clearSound() {
+  soundFile = null;
+  soundMime = null;
+  document.getElementById('sound-drop-zone').style.display = 'flex';
+  document.getElementById('sound-loaded').style.display = 'none';
+  document.getElementById('sound-play-btn').style.display = 'inline-flex';
+  document.getElementById('sound-play-btn').disabled = false;
+  document.getElementById('sound-stop-btn').style.display = 'none';
+  const wrap = document.getElementById('sound-progress-wrap');
+  const bar = document.getElementById('sound-progress-bar');
+  if (wrap) wrap.style.display = 'none';
+  if (bar) bar.style.width = '0%';
+  hideSoundStatus();
+}
+
+function showSoundStatus(msg) {
+  const el = document.getElementById('sound-status');
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+function hideSoundStatus() {
+  document.getElementById('sound-status').style.display = 'none';
+}
+
+function toastError(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = '⚠️ ' + msg;
+  el.style.borderColor = 'var(--danger)';
+  el.classList.add('show');
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    el.classList.remove('show');
+    el.style.borderColor = '';
+  }, 10000); // 10s for errors
+}
+
+// Volume label update
+document.addEventListener('DOMContentLoaded', () => {
+  const slider = document.getElementById('sound-volume');
+  if (slider) {
+    slider.addEventListener('input', () => {
+      document.getElementById('sound-vol-label').textContent = Math.round(slider.value * 100) + '%';
+    });
+  }
+});
+
+// ─────────────────────────────────────────────────────
+// SOUND — HOST SIDE
+// ─────────────────────────────────────────────────────
+let hostAudio = null;
+let hostSoundChunks = [];
+let hostSoundMime = 'audio/mpeg';
+let hostSoundVolume = 1;
+
+socket.on('cmd:sound-start', ({ mimeType, volume, totalChunks }) => {
+  hostSoundChunks = [];
+  hostSoundMime = mimeType || 'audio/mpeg';
+  hostSoundVolume = volume || 1;
+  logHost('Receiving sound from viewer…');
+});
+
+socket.on('cmd:sound-chunk', ({ chunk, index }) => {
+  hostSoundChunks[index] = chunk;
+});
+
+socket.on('cmd:sound-end', () => {
+  try {
+    if (hostAudio) { hostAudio.pause(); hostAudio.src = ''; hostAudio = null; }
+
+    // Each chunk was btoa'd individually — decode each separately then combine
+    const byteArrays = hostSoundChunks.map((chunk, i) => {
+      if (!chunk) { logHost('Warning: missing chunk ' + i); return new Uint8Array(0); }
+      try {
+        const binary = atob(chunk);
+        const bytes = new Uint8Array(binary.length);
+        for (let j = 0; j < binary.length; j++) bytes[j] = binary.charCodeAt(j);
+        return bytes;
+      } catch(e) {
+        logHost('Chunk ' + i + ' decode error: ' + e.message);
+        return new Uint8Array(0);
+      }
+    });
+
+    // Concatenate all Uint8Arrays into one
+    const totalLength = byteArrays.reduce((sum, arr) => sum + arr.length, 0);
+    const combined = new Uint8Array(totalLength);
+    let offset = 0;
+    byteArrays.forEach(arr => { combined.set(arr, offset); offset += arr.length; });
+
+    const blob = new Blob([combined], { type: hostSoundMime });
+    const url = URL.createObjectURL(blob);
+
+    hostAudio = new Audio(url);
+    hostAudio.volume = Math.min(1, Math.max(0, hostSoundVolume));
+
+    let progressInterval = null;
+    hostAudio.ontimeupdate = () => {
+      socket.emit('host:sound-progress', {
+        current: hostAudio.currentTime,
+        duration: hostAudio.duration || 0,
+      });
+    };
+    hostAudio.onended = () => {
+      URL.revokeObjectURL(url);
+      hostAudio = null;
+      socket.emit('host:sound-ended');
+    };
+
+    hostAudio.play().catch(err => logHost('Sound play error: ' + err.message));
+    logHost('Playing sound from viewer (vol: ' + Math.round(hostSoundVolume * 100) + '%)');
+    toast('Playing sound from viewer…');
+    hostSoundChunks = [];
+  } catch(err) {
+    logHost('Sound error: ' + err.message);
+    // Keep error visible in log for 30s
+    setTimeout(() => {}, 30000);
+  }
+});
+
+socket.on('cmd:stop-sound', () => {
+  if (hostAudio) {
+    hostAudio.pause();
+    hostAudio.src = '';
+    hostAudio = null;
+    socket.emit('host:sound-ended');
+    logHost('Sound stopped by viewer.');
+    toast('Sound stopped.');
+  }
+});
+
+// Viewer receives playback progress from host
+socket.on('host:sound-progress', ({ current, duration }) => {
+  const wrap = document.getElementById('sound-progress-wrap');
+  const bar = document.getElementById('sound-progress-bar');
+  const cur = document.getElementById('sound-time-current');
+  const tot = document.getElementById('sound-time-total');
+  if (!wrap) return;
+  wrap.style.display = 'flex';
+  const pct = duration > 0 ? (current / duration) * 100 : 0;
+  bar.style.width = pct + '%';
+  cur.textContent = formatTime(current);
+  tot.textContent = formatTime(duration);
+});
+
+socket.on('host:sound-ended', () => {
+  const wrap = document.getElementById('sound-progress-wrap');
+  const bar = document.getElementById('sound-progress-bar');
+  if (wrap) { bar.style.width = '100%'; }
+  setTimeout(() => {
+    if (wrap) wrap.style.display = 'none';
+    if (bar) bar.style.width = '0%';
+  }, 800);
+  document.getElementById('sound-play-btn').style.display = 'inline-flex';
+  document.getElementById('sound-stop-btn').style.display = 'none';
+  hideSoundStatus();
+});
+
+// ─────────────────────────────────────────────────────
+// PASSWORD UTILITIES
+// ─────────────────────────────────────────────────────
+async function hashPassword(pw) {
+  if (!pw) return null;
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pw));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+}
+
+function togglePasswordVis(inputId, btn) {
+  const inp = document.getElementById(inputId);
+  if (!inp) return;
+  inp.type = inp.type === 'password' ? 'text' : 'password';
+  btn.textContent = inp.type === 'password' ? '👁' : '🙈';
+}
+
+// ─────────────────────────────────────────────────────
+// SESSION RECORDING
+// ─────────────────────────────────────────────────────
+let mediaRecorder = null;
+let recordedChunks = [];
+let recStartTime = null;
+let recTimerInterval = null;
+let recCount = 0;
+
+function startRecording() {
+  const vid = document.getElementById('viewer-video');
+  if (!vid || !vid.srcObject) {
+    toast('Connect to a session first before recording.');
+    return;
+  }
+
+  // Pick best supported format
+  const mimeType = [
+    'video/webm;codecs=vp9,opus',
+    'video/webm;codecs=vp8,opus',
+    'video/webm',
+    'video/mp4',
+  ].find(m => MediaRecorder.isTypeSupported(m)) || '';
+
+  try {
+    mediaRecorder = new MediaRecorder(vid.srcObject, {
+      mimeType: mimeType || undefined,
+      videoBitsPerSecond: 2_500_000,
+    });
+  } catch(e) {
+    toast('Recording not supported in this browser: ' + e.message);
+    return;
+  }
+
+  recordedChunks = [];
+  mediaRecorder.ondataavailable = (e) => {
+    if (e.data && e.data.size > 0) recordedChunks.push(e.data);
+  };
+
+  mediaRecorder.onstop = () => {
+    finalizeRecording(mimeType);
+  };
+
+  mediaRecorder.onerror = (e) => {
+    toast('Recording error: ' + e.error?.message);
+    setRecStatus('idle');
+  };
+
+  mediaRecorder.start(1000); // collect chunks every 1s
+  recStartTime = Date.now();
+  setRecStatus('recording');
+  startRecTimer();
+
+  document.getElementById('rec-start-btn').style.display = 'none';
+  document.getElementById('rec-stop-btn').style.display = 'inline-flex';
+  document.getElementById('rec-timer').style.display = 'block';
+  toast('Recording started!');
+  logViewer('Recording started.');
+}
+
+function stopRecording() {
+  if (!mediaRecorder || mediaRecorder.state === 'inactive') return;
+  mediaRecorder.stop();
+  stopRecTimer();
+  document.getElementById('rec-start-btn').style.display = 'inline-flex';
+  document.getElementById('rec-stop-btn').style.display = 'none';
+  document.getElementById('rec-timer').style.display = 'none';
+  setRecStatus('idle');
+  toast('Recording saved!');
+  logViewer('Recording stopped.');
+}
+
+function finalizeRecording(mimeType) {
+  if (!recordedChunks.length) return;
+  const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
+  const blob = new Blob(recordedChunks, { type: mimeType || 'video/webm' });
+  const url = URL.createObjectURL(blob);
+  const now = new Date();
+  const timestamp = now.toISOString().slice(0,19).replace('T','_').replace(/:/g,'-');
+  const filename = 'screenlink-recording-' + timestamp + '.' + ext;
+
+  // Auto-download
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+
+  // Add to downloads list
+  recCount++;
+  const list = document.getElementById('rec-downloads');
+  const entry = document.createElement('div');
+  entry.style.cssText = 'display:flex;align-items:center;gap:.6rem;padding:.45rem .7rem;background:var(--bg);border:1px solid var(--border);border-radius:8px;font-size:.8rem;flex-wrap:wrap';
+
+  const duration = recStartTime ? Math.round((Date.now() - recStartTime) / 1000) : 0;
+  const size = formatFileSize(blob.size);
+
+  entry.innerHTML =
+    '<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8" fill="currentColor" stroke="none"/></svg>' +
+    '<span style="flex:1;color:var(--text);font-family:var(--mono);font-size:.75rem">Recording #' + recCount + ' &nbsp;·&nbsp; ' + formatTime(duration) + ' &nbsp;·&nbsp; ' + size + '</span>';
+
+  const dlBtn = document.createElement('a');
+  dlBtn.href = url;
+  dlBtn.download = filename;
+  dlBtn.className = 'btn';
+  dlBtn.style.cssText = 'padding:.25rem .65rem;font-size:.75rem;text-decoration:none';
+  dlBtn.textContent = '↓ Save';
+  entry.appendChild(dlBtn);
+
+  list.appendChild(entry);
+
+  // Revoke after 30 min
+  setTimeout(() => URL.revokeObjectURL(url), 30 * 60 * 1000);
+}
+
+function setRecStatus(state) {
+  const el = document.getElementById('rec-status');
+  if (!el) return;
+  if (state === 'recording') {
+    el.className = 'status live';
+    el.innerHTML = '<span class="status-dot"></span> Recording';
+  } else {
+    el.className = 'status idle';
+    el.innerHTML = '<span class="status-dot"></span> Not recording';
+  }
+}
+
+function startRecTimer() {
+  stopRecTimer();
+  recTimerInterval = setInterval(() => {
+    const elapsed = Math.floor((Date.now() - recStartTime) / 1000);
+    const m = Math.floor(elapsed / 60);
+    const s = elapsed % 60;
+    const el = document.getElementById('rec-time');
+    if (el) el.textContent = String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0');
+  }, 1000);
+}
+
+function stopRecTimer() {
+  if (recTimerInterval) { clearInterval(recTimerInterval); recTimerInterval = null; }
+}
+
+// Stop recording if host disconnects
+socket.on('host:disconnected', () => {
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') stopRecording();
+});
+
+// ─────────────────────────────────────────────────────
+// PUBLIC BROADCAST — HOST SIDE
+// ─────────────────────────────────────────────────────
+let _isPublic = false;
+let _publicLabelDebounce = null;
+
+function setPublicBroadcast(pub) {
+  _isPublic = pub;
+  document.getElementById('pub-off-btn').classList.toggle('active', !pub);
+  document.getElementById('pub-on-btn').classList.toggle('active', pub);
+  if (!isHosting) {
+    toast(pub ? 'Will broadcast publicly when you share screen.' : 'Will broadcast privately.');
+    return;
+  }
+  const label = (document.getElementById('pub-label').value.trim()) || 'Anonymous';
+  socket.emit('host:set-public', { isPublic: pub, label });
+  persistState();
+  toast(pub ? 'Now broadcasting publicly!' : 'Broadcast set to private.');
+}
+
+function updatePublicLabel() {
+  if (!_isPublic || !isHosting) return;
+  clearTimeout(_publicLabelDebounce);
+  _publicLabelDebounce = setTimeout(() => {
+    const label = (document.getElementById('pub-label').value.trim()) || 'Anonymous';
+    socket.emit('host:set-public', { isPublic: true, label });
+  }, 600);
+}
+
+// When host starts sharing, apply public setting
+socket.on('host:code', ({ code, hasPassword }) => {
+  if (_isPublic && isHosting) {
+    const label = (document.getElementById('pub-label').value.trim()) || 'Anonymous';
+    socket.emit('host:set-public', { isPublic: true, label });
+  }
+});
+
+// ─────────────────────────────────────────────────────
+// PUBLIC BROADCAST — VIEWER SIDE
+// ─────────────────────────────────────────────────────
+function refreshPublicList() {
+  socket.emit('viewer:get-public');
+}
+
+function joinPublic(code) {
+  setViewerStatus('waiting');
+  _viewerConnectedCode = code;
+  _viewerConnectedPwHash = null;
+  socket.emit('viewer:join-public', { code });
+  logViewer('Joining public broadcast ' + code + '…');
+  // Switch to viewer mode if not already
+  setMode('viewer');
+}
+
+socket.on('public:list', (list) => {
+  const listEl = document.getElementById('public-list');
+  const emptyEl = document.getElementById('public-list-empty');
+  if (!listEl) return;
+
+  if (!list || list.length === 0) {
+    listEl.innerHTML = '';
+    if (emptyEl) emptyEl.style.display = 'block';
+    return;
+  }
+
+  if (emptyEl) emptyEl.style.display = 'none';
+  listEl.innerHTML = '';
+  list.forEach(({ code, label, viewers }) => {
+    const item = document.createElement('div');
+    item.style.cssText = 'display:flex;align-items:center;gap:.75rem;background:var(--bg);border:1px solid var(--border);border-radius:9px;padding:.6rem .85rem;flex-wrap:wrap';
+    const info = document.createElement('div');
+    info.style.flex = '1';
+    info.style.minWidth = '120px';
+    info.innerHTML =
+      '<div style="font-size:.88rem;font-weight:500;color:var(--text)">' + esc(label) + '</div>' +
+      '<div style="font-size:.72rem;color:var(--muted);font-family:var(--mono);margin-top:.15rem">' +
+      '<span style="color:var(--accent2)">●</span> LIVE · ' + viewers + ' viewer' + (viewers !== 1 ? 's' : '') + '</div>';
+    const btn = document.createElement('button');
+    btn.className = 'btn primary';
+    btn.style.cssText = 'padding:.4rem .9rem;font-size:.8rem';
+    btn.textContent = 'Watch';
+    btn.addEventListener('click', () => joinPublic(code));
+    item.appendChild(info);
+    item.appendChild(btn);
+    listEl.appendChild(item);
+  });
+});
+
+// Fetch public list on load and when switching to viewer mode
+document.addEventListener('DOMContentLoaded', () => {
+  setTimeout(refreshPublicList, 1000);
+});
+
+// Save state when page becomes hidden (sleep, lid close, tab switch)
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') {
+    persistState();
+  } else if (document.visibilityState === 'visible') {
+    // Tab became visible again — check if socket is still alive
+    if (!socket.connected) {
+      showReconnectBanner('Reconnecting after lid close...');
+    }
+  }
+});
+
+// Also save on page unload
+window.addEventListener('beforeunload', () => {
+  persistState();
+});
+
+// ── Web Lock: prevent ChromeOS from killing the tab ──
+// Holds a background lock that keeps the page alive even with lid closed
+let _wakeLock = null;
+
+async function acquireWakeLock() {
+  // Try Screen Wake Lock API first (keeps screen on)
+  if ('wakeLock' in navigator) {
+    try {
+      _wakeLock = await navigator.wakeLock.request('screen');
+      _wakeLock.addEventListener('release', () => {
+        // Re-acquire when tab becomes visible again
+        if (document.visibilityState === 'visible') acquireWakeLock();
+      });
+      console.log('[ScreenLink] Wake lock acquired');
+    } catch(e) {
+      console.log('[ScreenLink] Wake lock failed:', e.message);
+    }
+  }
+
+  // Web Locks API — holds a background task lock preventing suspension
+  if ('locks' in navigator) {
+    navigator.locks.request('screenlink-keepalive', { mode: 'shared' }, () => {
+      // This promise never resolves, keeping the lock held indefinitely
+      return new Promise(() => {});
+    });
+    console.log('[ScreenLink] Background lock acquired');
+  }
+}
+
+// Acquire locks immediately and re-acquire on visibility change
+acquireWakeLock();
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') acquireWakeLock();
+});
+
+// ── Silent audio loop — tricks ChromeOS into keeping the tab alive ──
+// ChromeOS won't kill tabs that are playing audio
+let _silentAudio = null;
+
+function startSilentAudio() {
+  if (_silentAudio) return;
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    // Create a silent oscillator — no sound but keeps audio context active
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    gain.gain.value = 0.0001; // nearly silent
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    _silentAudio = { ctx, osc, gain };
+    console.log('[ScreenLink] Silent audio keepalive started');
+  } catch(e) {
+    console.log('[ScreenLink] Silent audio failed:', e.message);
+  }
+}
+
+function stopSilentAudio() {
+  if (_silentAudio) {
+    try { _silentAudio.osc.stop(); _silentAudio.ctx.close(); } catch(e) {}
+    _silentAudio = null;
+  }
+}
+
+// Start silent audio when host starts sharing or viewer connects
+// so ChromeOS thinks media is playing and won't kill the tab
+
+// ─────────────────────────────────────────────────────
+// FILE TRANSFER — VIEWER SIDE
+// ─────────────────────────────────────────────────────
+let pendingFile = null;
+
+function handleFileDrop(e) {
+  e.preventDefault();
+  document.getElementById('file-drop-zone').classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file) handleFileSelect(file);
+}
+
+function handleFileSelect(file) {
+  if (!file) return;
+  if (file.size > 50 * 1024 * 1024) { toast('File too large — max 50MB.'); return; }
+  pendingFile = file;
+  document.getElementById('file-name').textContent = file.name;
+  document.getElementById('file-size').textContent = formatFileSize(file.size);
+  document.getElementById('file-drop-zone').style.display = 'none';
+  document.getElementById('file-loaded').style.display = 'flex';
+}
+
+function clearFile() {
+  pendingFile = null;
+  document.getElementById('file-drop-zone').style.display = 'flex';
+  document.getElementById('file-loaded').style.display = 'none';
+  document.getElementById('file-progress-wrap').style.display = 'none';
+  document.getElementById('file-progress-bar').style.width = '0%';
+  document.getElementById('file-send-btn').disabled = false;
+}
+
+async function sendFile() {
+  if (!pendingFile) return;
+  if (!socket.connected) { toast('Not connected.'); return; }
+
+  const file = pendingFile;
+  const CHUNK = 32 * 1024; // 32KB chunks
+  const buf = await file.arrayBuffer();
+  const bytes = new Uint8Array(buf);
+  const totalChunks = Math.ceil(bytes.length / CHUNK);
+
+  document.getElementById('file-send-btn').disabled = true;
+  document.getElementById('file-progress-wrap').style.display = 'flex';
+  document.getElementById('file-progress-label').textContent = 'Sending…';
+
+  socket.emit('cmd:file-start', {
+    name: file.name,
+    size: file.size,
+    mimeType: file.type || 'application/octet-stream',
+    totalChunks,
+  });
+
+  for (let i = 0; i < totalChunks; i++) {
+    const slice = bytes.slice(i * CHUNK, (i + 1) * CHUNK);
+    let binary = '';
+    slice.forEach(b => binary += String.fromCharCode(b));
+    socket.emit('cmd:file-chunk', { chunk: btoa(binary), index: i });
+
+    const pct = Math.round(((i + 1) / totalChunks) * 100);
+    document.getElementById('file-progress-bar').style.width = pct + '%';
+    document.getElementById('file-progress-pct').textContent = pct + '%';
+
+    if (i % 10 === 0) await new Promise(r => setTimeout(r, 10));
+  }
+
+  socket.emit('cmd:file-end');
+  document.getElementById('file-progress-label').textContent = 'Waiting for host…';
+  logViewer('Sent file: ' + file.name + ' (' + formatFileSize(file.size) + ')');
+}
+
+socket.on('host:file-received', ({ name }) => {
+  document.getElementById('file-progress-label').textContent = 'Downloaded on host!';
+  document.getElementById('file-progress-pct').textContent = '✓';
+  document.getElementById('file-send-btn').disabled = false;
+
+  // Add to transfer log
+  const log = document.getElementById('file-transfers');
+  const entry = document.createElement('div');
+  entry.style.cssText = 'display:flex;align-items:center;gap:.5rem;font-size:.78rem;padding:.35rem .6rem;background:rgba(62,207,207,.07);border:1px solid rgba(62,207,207,.2);border-radius:7px;color:var(--accent2)';
+  entry.innerHTML = '<svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>' + esc(name) + ' — downloaded on host';
+  log.appendChild(entry);
+
+  toast(name + ' downloaded on host!');
+  logViewer('Host downloaded: ' + name);
+});
+
+socket.on('file:error', ({ message }) => {
+  toast('File error: ' + message);
+  document.getElementById('file-send-btn').disabled = false;
+  document.getElementById('file-progress-label').textContent = 'Error: ' + message;
+});
+
+// ─────────────────────────────────────────────────────
+// FILE TRANSFER — HOST SIDE
+// ─────────────────────────────────────────────────────
+let hostFileChunks = [];
+let hostFileName = '';
+let hostFileMime = '';
+
+socket.on('cmd:file-start', ({ name, size, mimeType, totalChunks }) => {
+  hostFileChunks = new Array(totalChunks);
+  hostFileName = name;
+  hostFileMime = mimeType;
+  logHost('Receiving file: ' + name + ' (' + formatFileSize(size) + ')');
+  toast('Receiving file: ' + name);
+});
+
+socket.on('cmd:file-chunk', ({ chunk, index }) => {
+  hostFileChunks[index] = chunk;
+});
+
+socket.on('cmd:file-end', () => {
+  try {
+    // Decode each chunk individually then combine
+    const byteArrays = hostFileChunks.map((chunk, i) => {
+      if (!chunk) return new Uint8Array(0);
+      const binary = atob(chunk);
+      const bytes = new Uint8Array(binary.length);
+      for (let j = 0; j < binary.length; j++) bytes[j] = binary.charCodeAt(j);
+      return bytes;
+    });
+
+    const totalLength = byteArrays.reduce((sum, a) => sum + a.length, 0);
+    const combined = new Uint8Array(totalLength);
+    let offset = 0;
+    byteArrays.forEach(a => { combined.set(a, offset); offset += a.length; });
+
+    const blob = new Blob([combined], { type: hostFileMime });
+    const url = URL.createObjectURL(blob);
+
+    // Trigger download
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = hostFileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+
+    socket.emit('host:file-received', { name: hostFileName });
+    logHost('Downloaded: ' + hostFileName);
+    toast('File downloaded: ' + hostFileName);
+    hostFileChunks = [];
+  } catch(err) {
+    logHost('File error: ' + err.message);
+    toast('File error: ' + err.message);
+  }
+});
+
+// ─────────────────────────────────────────────────────
+// CHROME EXTENSION COMMUNICATION (HOST SIDE)
+// ─────────────────────────────────────────────────────
+// The extension ID is set after loading unpacked — update this after first install
+// It will be auto-detected via ping below
+let detectedExtId = null;
+
+function checkExtension() {
+  if (typeof chrome === 'undefined' || !chrome.runtime) {
+    setExtStatus('not-available');
+    return;
+  }
+  // Try pinging known extension ID first, then broadcast
+  tryPingExtension((found) => {
+    if (found) {
+      setExtStatus('connected');
+      socket.emit('host:ext-status', { connected: true });
+    } else {
+      setExtStatus('not-found');
+      socket.emit('host:ext-status', { connected: false });
+    }
+  });
+}
+
+function tryPingExtension(cb) {
+  // Chrome extensions with externally_connectable can be messaged by ID
+  // We store the ID in localStorage after first successful ping
+  const savedId = localStorage.getItem('screenlink-ext-id');
+  if (savedId) {
+    pingExtId(savedId, (ok) => {
+      if (ok) { detectedExtId = savedId; cb(true); }
+      else tryBroadcastPing(cb);
+    });
+  } else {
+    tryBroadcastPing(cb);
+  }
+}
+
+function tryBroadcastPing(cb) {
+  // The extension injects a content script that listens on the page
+  // Post a message and wait for a response via window.addEventListener
+  const nonce = 'slping_' + Date.now();
+  const handler = (e) => {
+    if (e.data && e.data.type === 'SCREENLINK_PONG' && e.data.nonce === nonce) {
+      window.removeEventListener('message', handler);
+      detectedExtId = e.data.extId || null;
+      if (detectedExtId) localStorage.setItem('screenlink-ext-id', detectedExtId);
+      cb(true);
+    }
+  };
+  window.addEventListener('message', handler);
+  window.postMessage({ type: 'SCREENLINK_PING_PAGE', nonce }, '*');
+  setTimeout(() => { window.removeEventListener('message', handler); cb(false); }, 1500);
+}
+
+function pingExtId(extId, cb) {
+  try {
+    chrome.runtime.sendMessage(extId, { type: 'SCREENLINK_PING' }, (resp) => {
+      if (chrome.runtime.lastError || !resp) cb(false);
+      else cb(true);
+    });
+  } catch(e) { cb(false); }
+}
+
+function sendInputCmd(cmd) {
+  if (!detectedExtId) return;
+  try {
+    chrome.runtime.sendMessage(detectedExtId, { type: 'SCREENLINK_CMD', cmd }, () => {});
+  } catch(e) {}
+}
+
+function setExtStatus(state) {
+  const el = document.getElementById('ext-status');
+  if (!el) return;
+  const labels = {
+    'connected': 'Extension connected',
+    'not-found': 'Extension not found — load it in chrome://extensions',
+    'not-available': 'Not available (use Chrome)',
+    'idle': 'Not detected',
+  };
+  const classes = { 'connected': 'live', 'not-found': 'idle', 'not-available': 'idle', 'idle': 'idle' };
+  el.className = 'status ' + (classes[state] || 'idle');
+  el.innerHTML = `<span class="status-dot"></span> ${labels[state] || state}`;
+}
+
+// Auto-check extension when host starts sharing
+const _origStartShare = typeof startShare !== 'undefined' ? startShare : null;
+
+// ─────────────────────────────────────────────────────
+// INPUT COMMANDS — HOST SIDE (receives from viewer via socket)
+// ─────────────────────────────────────────────────────
+socket.on('cmd:input', (cmd) => {
+  if (cmd.action === 'calibrate') {
+    // Forward calibration to the active tab via postMessage to content script
+    if (detectedExtId) {
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (tabs && tabs[0]) {
+          chrome.tabs.sendMessage(tabs[0].id, {
+            type: 'SCREENLINK_CMD',
+            cmd: { action: 'calibrate', offsetX: cmd.offsetX || 0, offsetY: cmd.offsetY || 0 }
+          }, () => {});
+        }
+      });
+    }
+    return;
+  }
+  if (cmd.action === 'get-info') {
+    // Ask content script for DPR/scroll info via postMessage
+    // We can't easily get async response here so we use a workaround:
+    // inject a script that posts the info back to the page
+    if (detectedExtId) {
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (!tabs || !tabs[0]) return;
+        chrome.scripting.executeScript({
+          target: { tabId: tabs[0].id },
+          func: () => {
+            const info = {
+              dpr: window.devicePixelRatio || 1,
+              scrollX: window.scrollX,
+              scrollY: window.scrollY,
+              innerW: window.innerWidth,
+              innerH: window.innerHeight,
+            };
+            // Send back via socket — we need to communicate to the ScreenLink page
+            window.__screenLinkInfo = info;
+            return info;
+          }
+        }, (results) => {
+          if (results && results[0] && results[0].result) {
+            const info = results[0].result;
+            socket.emit('host:info-response', info);
+            logHost('Host info: DPR=' + info.dpr + ' scroll=' + info.scrollX + ',' + info.scrollY + ' viewport=' + info.innerW + 'x' + info.innerH);
+          }
+        });
+      });
+    }
+    return;
+  }
+  if (!detectedExtId) return;
+  sendInputCmd(cmd);
+});
+
+// ─────────────────────────────────────────────────────
+// INPUT CONTROLS — VIEWER SIDE
+// ─────────────────────────────────────────────────────
+let inputMode = 'off'; // 'off' | 'mouse' | 'both'
+let extConnected = false;
+
+function setInputMode(mode) {
+  inputMode = mode;
+  ['off','mouse','both'].forEach(m => {
+    document.getElementById('input-mode-' + m).classList.toggle('active', m === mode);
+  });
+  const wrap = document.getElementById('input-active-wrap');
+  if (wrap) wrap.style.display = mode !== 'off' ? 'flex' : 'none';
+
+  if (mode !== 'off' && !extConnected) {
+    toast('Note: The host needs the ScreenLink Controller extension installed.');
+  }
+}
+
+socket.on('host:info-response', (info) => {
+  const el = document.getElementById('host-info-readout');
+  if (!el) return;
+  el.style.display = 'block';
+  el.innerHTML = 'DPR: ' + info.dpr +
+    ' | scroll: ' + info.scrollX + ',' + info.scrollY +
+    ' | viewport: ' + info.innerW + 'x' + info.innerH +
+    '<br>Suggested Y offset: try <strong>' + Math.round((info.dpr - 1) * -50) + '</strong> if clicks are off';
+  // Also relay calibration to server so it forwards to extension
+  socket.emit('host:info-ack', info);
+});
+
+socket.on('host:ext-status', ({ connected }) => {
+  extConnected = connected;
+  const el = document.getElementById('input-ext-status');
+  if (!el) return;
+  if (connected) {
+    el.className = 'status live';
+    el.innerHTML = '<span class="status-dot"></span> Extension connected on host';
+  } else {
+    el.className = 'status idle';
+    el.innerHTML = '<span class="status-dot"></span> Extension not detected on host';
+  }
+});
+
+function sendInput(cmd) {
+  if (inputMode === 'off') return;
+  if (!socket.connected) return;
+  socket.emit('cmd:input', cmd);
+}
+
+function sendKey(key) {
+  sendInput({ action: 'keydown', key, code: 'Key' + key.toUpperCase(), keyCode: key.charCodeAt(0) });
+  setTimeout(() => sendInput({ action: 'keyup', key, code: 'Key' + key.toUpperCase(), keyCode: key.charCodeAt(0) }), 80);
+}
+
+function sendTypeText() {
+  const inp = document.getElementById('type-input');
+  if (!inp || !inp.value.trim()) return;
+  sendInput({ action: 'type', text: inp.value });
+  logViewer('Sent: type "' + inp.value + '"');
+  inp.value = '';
+  toast('Text sent!');
+}
+
+// ─────────────────────────────────────────────────────
+// VIEWER SCREEN CLICK → INPUT COMMANDS
+// ─────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  const viewerVideo = document.getElementById('viewer-video');
+  const viewerWrap  = document.getElementById('viewer-screen-wrap');
+
+  function videoCoords(e) {
+    const vw = viewerVideo.videoWidth;
+    const vh = viewerVideo.videoHeight;
+
+    const rect = viewerVideo.getBoundingClientRect();
+
+    if (!vw || !vh) {
+      return { x: Math.round(e.clientX - rect.left), y: Math.round(e.clientY - rect.top) };
+    }
+
+    // The video element's CSS size in real screen pixels (accounts for devicePixelRatio)
+    const cssW = rect.width;
+    const cssH = rect.height;
+
+    // object-fit:contain fits the video inside the element preserving aspect ratio.
+    // Figure out which dimension is the constraining one.
+    const videoAspect = vw / vh;
+    const elemAspect  = cssW / cssH;
+
+    let renderedW, renderedH;
+    if (videoAspect > elemAspect) {
+      // Video is wider than element — width fills, height letterboxed
+      renderedW = cssW;
+      renderedH = cssW / videoAspect;
+    } else {
+      // Video is taller than element — height fills, width pillarboxed
+      renderedH = cssH;
+      renderedW = cssH * videoAspect;
+    }
+
+    // Centering offsets (black bars)
+    const barX = (cssW - renderedW) / 2;
+    const barY = (cssH - renderedH) / 2;
+
+    // Click position relative to where video image starts
+    const relX = e.clientX - rect.left - barX;
+    const relY = e.clientY - rect.top  - barY;
+
+    // Map to actual video resolution
+    const x = Math.round(Math.max(0, Math.min(renderedW, relX)) / renderedW * vw);
+    const y = Math.round(Math.max(0, Math.min(renderedH, relY)) / renderedH * vh);
+
+    if (window._slDebug) {
+      showClickDot(e.clientX, e.clientY, x, y, rect, barX, barY, renderedW / vw);
+      showDebugReadout(
+        'vw=' + vw + ' vh=' + vh +
+        ' | css=' + Math.round(cssW) + 'x' + Math.round(cssH) +
+        ' | rendered=' + Math.round(renderedW) + 'x' + Math.round(renderedH) +
+        ' | bars=' + Math.round(barX) + ',' + Math.round(barY) +
+        ' | rel=' + Math.round(relX) + ',' + Math.round(relY) +
+        ' | vid=' + x + ',' + y
+      );
+    }
+
+    return { x, y };
+  }
+
+  // Debug: show a dot where click landed on the video image
+  function showClickDot(clientX, clientY, vidX, vidY, rect, offsetX, offsetY, scale) {
+    const dot = document.createElement('div');
+    dot.style.position = 'fixed';
+    dot.style.width = '10px';
+    dot.style.height = '10px';
+    dot.style.borderRadius = '50%';
+    dot.style.background = 'red';
+    dot.style.border = '2px solid #fff';
+    dot.style.pointerEvents = 'none';
+    dot.style.zIndex = '9999';
+    dot.style.left = (clientX - 5) + 'px';
+    dot.style.top = (clientY - 5) + 'px';
+    dot.style.transition = 'opacity .8s';
+    document.body.appendChild(dot);
+
+    const mappedX = rect.left + offsetX + vidX * scale;
+    const mappedY = rect.top  + offsetY + vidY * scale;
+    const dot2 = document.createElement('div');
+    dot2.style.position = 'fixed';
+    dot2.style.width = '10px';
+    dot2.style.height = '10px';
+    dot2.style.borderRadius = '50%';
+    dot2.style.background = 'cyan';
+    dot2.style.border = '2px solid #000';
+    dot2.style.pointerEvents = 'none';
+    dot2.style.zIndex = '9999';
+    dot2.style.left = (mappedX - 5) + 'px';
+    dot2.style.top  = (mappedY - 5) + 'px';
+    dot2.style.transition = 'opacity .8s';
+    document.body.appendChild(dot2);
+
+    const label = document.createElement('div');
+    label.style.position = 'fixed';
+    label.style.font = '11px monospace';
+    label.style.background = 'rgba(0,0,0,.75)';
+    label.style.color = '#fff';
+    label.style.padding = '2px 5px';
+    label.style.borderRadius = '3px';
+    label.style.pointerEvents = 'none';
+    label.style.zIndex = '9999';
+    label.style.left = (clientX + 10) + 'px';
+    label.style.top  = (clientY - 8) + 'px';
+    label.textContent = 'click:' + Math.round(clientX) + ',' + Math.round(clientY) + ' -> vid:' + vidX + ',' + vidY;
+    document.body.appendChild(label);
+
+    setTimeout(function() { dot.style.opacity='0'; dot2.style.opacity='0'; label.style.opacity='0'; }, 1200);
+    setTimeout(function() { dot.remove(); dot2.remove(); label.remove(); }, 2000);
+  }
+
+  if (viewerWrap) {
+    viewerWrap.addEventListener('click', (e) => {
+      if (inputMode === 'off') return;
+      if (e.target === viewerVideo || viewerVideo.contains(e.target)) {
+        const { x, y } = videoCoords(e);
+        sendInput({ action: 'click', x, y, button: 0 });
+        logViewer('Click at ' + x + ',' + y);
+      }
+    });
+
+    viewerWrap.addEventListener('contextmenu', (e) => {
+      if (inputMode === 'off') return;
+      if (e.target === viewerVideo || viewerVideo.contains(e.target)) {
+        e.preventDefault();
+        const { x, y } = videoCoords(e);
+        sendInput({ action: 'contextmenu', x, y });
+      }
+    });
+
+    viewerWrap.addEventListener('dblclick', (e) => {
+      if (inputMode === 'off') return;
+      if (e.target === viewerVideo || viewerVideo.contains(e.target)) {
+        const { x, y } = videoCoords(e);
+        sendInput({ action: 'dblclick', x, y });
+      }
+    });
+
+    viewerWrap.addEventListener('wheel', (e) => {
+      if (inputMode === 'off') return;
+      if (e.target === viewerVideo || viewerVideo.contains(e.target)) {
+        e.preventDefault();
+        sendInput({ action: 'scroll', x: 0, y: 0, deltaX: e.deltaX, deltaY: e.deltaY });
+      }
+    }, { passive: false });
+
+    // Keyboard — only when 'both' mode is active and video is focused
+    viewerWrap.addEventListener('keydown', (e) => {
+      if (inputMode !== 'both') return;
+      sendInput({
+        action: 'keydown',
+        key: e.key,
+        code: e.code,
+        keyCode: e.keyCode,
+        shiftKey: e.shiftKey,
+        ctrlKey: e.ctrlKey,
+        altKey: e.altKey,
+        metaKey: e.metaKey,
+      });
+    });
+
+    viewerWrap.addEventListener('keyup', (e) => {
+      if (inputMode !== 'both') return;
+      sendInput({
+        action: 'keyup',
+        key: e.key,
+        code: e.code,
+        keyCode: e.keyCode,
+        shiftKey: e.shiftKey,
+        ctrlKey: e.ctrlKey,
+        altKey: e.altKey,
+        metaKey: e.metaKey,
+      });
+    });
+
+    // Make the wrap focusable for keyboard events
+    viewerWrap.setAttribute('tabindex', '0');
+  }
+
+  // type-input enter key
+  const typeInput = document.getElementById('type-input');
+  if (typeInput) {
+    typeInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); sendTypeText(); }
+    });
+  }
+});
+
+// ─────────────────────────────────────────────────────
+// HOST INFO BROADCAST
+// ─────────────────────────────────────────────────────
+let infoInterval = null;
+
+function startInfoBroadcast() {
+  if (infoInterval) clearInterval(infoInterval);
+  sendHostInfo();
+  infoInterval = setInterval(sendHostInfo, 3000);
+}
+
+function stopInfoBroadcast() {
+  if (infoInterval) { clearInterval(infoInterval); infoInterval = null; }
+}
+
+function sendHostInfo() {
+  const now = new Date();
+  const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const dateStr = now.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+
+  // Screen resolution
+  const screenInfo = `${window.screen.width}×${window.screen.height}`;
+
+  // Browser info
+  const ua = navigator.userAgent;
+  let browser = 'Unknown';
+  if (ua.includes('Chrome') && !ua.includes('Edg')) browser = 'Chrome ' + (ua.match(/Chrome\/([\d.]+)/)||[])[1];
+  else if (ua.includes('Firefox')) browser = 'Firefox ' + (ua.match(/Firefox\/([\d.]+)/)||[])[1];
+  else if (ua.includes('Safari') && !ua.includes('Chrome')) browser = 'Safari';
+  else if (ua.includes('Edg')) browser = 'Edge';
+
+  // Active tab count (only ScreenLink-opened ones we can track)
+  const tabCount = Object.keys(openedTabs).length;
+
+  // Current page title/url (the host's ScreenLink tab itself)
+  const activeTab = document.title + ' — ' + location.hostname;
+
+  socket.emit('host:info', {
+    time: timeStr + ', ' + dateStr,
+    screen: screenInfo,
+    browser,
+    tabCount,
+    activeTab,
+    status: 'Sharing',
+  });
+}
+
+// ─────────────────────────────────────────────────────
+// FULLSCREEN
+// ─────────────────────────────────────────────────────
+function toggleFullscreen(wrapperId, btn) {
+  const el = document.getElementById(wrapperId);
+  const isFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
+
+  if (!isFs) {
+    const req = el.requestFullscreen || el.webkitRequestFullscreen;
+    if (req) req.call(el);
+  } else {
+    const exit = document.exitFullscreen || document.webkitExitFullscreen;
+    if (exit) exit.call(document);
+  }
+}
+
+// Update button label when fullscreen changes
+function onFullscreenChange() {
+  const isFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
+  document.querySelectorAll('.screen-ctrl-btn').forEach(btn => {
+    const svg = btn.querySelector('svg');
+    if (isFs) {
+      btn.innerHTML = `<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M8 3v3a2 2 0 01-2 2H3m18 0h-3a2 2 0 01-2-2V3m0 18v-3a2 2 0 012-2h3M3 16h3a2 2 0 012 2v3"/></svg> Exit`;
+    } else {
+      btn.innerHTML = `<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/></svg> Fullscreen`;
+    }
+  });
+}
+
+document.addEventListener('fullscreenchange', onFullscreenChange);
+document.addEventListener('webkitfullscreenchange', onFullscreenChange);
+
+// Double-click on screen to toggle fullscreen
+document.addEventListener('DOMContentLoaded', () => {
+  ['host-screen-wrap','viewer-screen-wrap'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('dblclick', () => toggleFullscreen(id));
+  });
+});
+</script>
+</body>
+</html>
